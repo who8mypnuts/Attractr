@@ -1,0 +1,51 @@
+# Pickover
+
+`pickover` · map · 3-D · family: Maps
+
+![Pickover](images/pickover.png)
+
+Clifford Pickover's iconic strange attractor — wing- and shell-like 3-D forms with subtle layering. z feeds back into x and y, so it is genuinely three-dimensional.
+
+## Equations
+
+```text
+x′ = sin(a · y) − z · cos(b · x)
+y′ = z · sin(c · x) − cos(d · y)
+z′ = sin(x)
+```
+
+## Parameters
+
+| Name | Default | Range | Meaning |
+|---|---|---|---|
+| a | 2.24 | [-3, 3] | X stretch — how far the orbit reaches sideways. |
+| b | 0.43 | [-3, 3] | X fold frequency (scaled by z). |
+| c | -0.65 | [-3, 3] | Y sine drive (scaled by z). |
+| d | -2.43 | [-3, 3] | Y fold. |
+
+## References
+
+- C. A. Pickover, "Computers, Pattern, Chaos and Beauty" (1990)
+
+## Source (`.atr`)
+
+```text
+name: Pickover
+family: Maps
+desc: Clifford Pickover's iconic strange attractor — wing- and shell-like 3-D forms with subtle layering. z feeds back into x and y, so it is genuinely three-dimensional.
+ref: C. A. Pickover, "Computers, Pattern, Chaos and Beauty" (1990)
+tags: map, classic, 3d
+warmup: 200
+camera: 25 20 0 1
+
+param a = 2.24 [-3, 3] "X stretch — how far the orbit reaches sideways."
+param b = 0.43 [-3, 3] "X fold frequency (scaled by z)."
+param c = -0.65 [-3, 3] "Y sine drive (scaled by z)."
+param d = -2.43 [-3, 3] "Y fold."
+
+x' = sin(a*y) - z*cos(b*x)
+y' = z*sin(c*x) - cos(d*y)
+z' = sin(x)
+```
+
+Render it: `attractr render pickover --size 2048x2048 --report md`

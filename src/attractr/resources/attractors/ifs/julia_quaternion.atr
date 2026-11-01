@@ -1,0 +1,26 @@
+name: Julia (quaternion)
+family: Julia
+desc: Quaternion Julia set for q² + c, rendered as a 3-D surface by inverse iteration (q ← ±√(q − c) in the k = 0 slice). The j-term c_j drives the depth — set it to 0 for the classic flat 2-D Julia set.
+ref: A. Norton, "Generation and display of geometric fractals in 3-D", SIGGRAPH 1982
+tags: julia, fractal, 3d
+warmup: 30
+ic: 0.5 0.5 0.1
+camera: 30 20 0 1
+
+param c_re = -0.2 [-2, 2] "Real (scalar) part of c."
+param c_im = 0.6 [-2, 2] "i part of c — shapes the classic 2-D dendrites."
+param c_j = 0.3 [-1, 1] "j part of c — drives the 3-D depth; 0 collapses to the flat Julia set."
+
+tw = x - c_re
+tx = y - c_im
+ty = z - c_j
+vm = sqrt(tx*tx + ty*ty)
+mag = sqrt(tw*tw + tx*tx + ty*ty)
+r = sqrt(mag)
+theta = 0.5*atan2(vm, tw) + select(rand() < 0.5, 0, pi)
+sw = r*cos(theta)
+svm = r*sin(theta)
+k = select(vm > 1e-9, svm/max(vm, 1e-9), 0)
+x' = sw
+y' = select(vm > 1e-9, k*tx, svm)
+z' = select(vm > 1e-9, k*ty, 0)

@@ -1,0 +1,15 @@
+name: Gumowski-Mira
+family: Maps
+desc: A 2-D map from plasma physics (CERN, 1980). Tends toward delicate, organic curves that look like seashells or jellyfish.
+ref: I. Gumowski & C. Mira, "Recurrences and Discrete Dynamic Systems" (1980)
+tags: map, 2d
+warmup: 200
+dims: 2
+
+param a = 0.008 [-1, 1] "Damping — close to 0 keeps orbits open; further from 0 tightens loops."
+param mu = -0.496 [-1, 1] "μ — shape of the nonlinear function f(x); sweeps between bulbs and spikes."
+
+fx  = mu*x + 2*(1 - mu)*x^2/(1 + x^2)
+x'  = y + a*(1 - 0.05*y^2)*y + fx
+fxn = mu*x' + 2*(1 - mu)*x'^2/(1 + x'^2)
+y'  = -x + fxn

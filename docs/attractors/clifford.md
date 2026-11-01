@@ -1,0 +1,55 @@
+# Clifford
+
+`clifford` · map · 3-D · family: Maps
+
+![Clifford](images/clifford.png)
+
+A classic 2-D iterative map lifted into 3-D. Six knobs warp how each step folds and stretches the orbit — small changes produce wildly different shapes.
+
+## Equations
+
+```text
+x′ = sin(a · y) + c · cos(a · x)
+y′ = sin(b · x) + d · cos(b · y)
+z′ = sin(e · y) + f · cos(e · z)
+```
+
+## Parameters
+
+| Name | Default | Range | Meaning |
+|---|---|---|---|
+| a | -1.4 | [-3, 3] | Horizontal sine drive — controls the main wave that bends the orbit left and right. |
+| b | 1.6 | [-3, 3] | Vertical sine drive — the counterpart wave acting on y. |
+| c | 1 | [-3, 3] | Cosine gain on x — how much the orbit is stretched horizontally. |
+| d | 0.7 | [-3, 3] | Cosine gain on y — vertical stretch. |
+| e | 1.5 | [-3, 3] | Depth drive — frequency of the z lift (0 with f = 0 gives the flat 2-D map). |
+| f | 0.5 | [-3, 3] | Depth gain — amplitude of the z lift. |
+
+## References
+
+- https://paulbourke.net/fractals/clifford/
+
+## Source (`.atr`)
+
+```text
+name: Clifford
+family: Maps
+desc: A classic 2-D iterative map lifted into 3-D. Six knobs warp how each step folds and stretches the orbit — small changes produce wildly different shapes.
+ref: https://paulbourke.net/fractals/clifford/
+tags: map, classic, 3d
+camera: 0 0 0 1
+warmup: 200
+
+param a = -1.4 [-3, 3] "Horizontal sine drive — controls the main wave that bends the orbit left and right."
+param b = 1.6 [-3, 3] "Vertical sine drive — the counterpart wave acting on y."
+param c = 1.0 [-3, 3] "Cosine gain on x — how much the orbit is stretched horizontally."
+param d = 0.7 [-3, 3] "Cosine gain on y — vertical stretch."
+param e = 1.5 [-3, 3] "Depth drive — frequency of the z lift (0 with f = 0 gives the flat 2-D map)."
+param f = 0.5 [-3, 3] "Depth gain — amplitude of the z lift."
+
+x' = sin(a*y) + c*cos(a*x)
+y' = sin(b*x) + d*cos(b*y)
+z' = sin(e*y) + f*cos(e*z)
+```
+
+Render it: `attractr render clifford --size 2048x2048 --report md`

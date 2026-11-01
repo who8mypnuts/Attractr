@@ -1,0 +1,13 @@
+name: Kaplan-Yorke
+family: Maps
+desc: A textbook example with a computable fractal dimension: a Bernoulli shift in x driving a damped cosine in y (a trace of noise replaces the exact integer arithmetic of the original).
+ref: J. L. Kaplan & J. A. Yorke (1979)
+tags: map, 2d
+dims: 2
+ic: 0.1234 0.1 0
+warmup: 50
+
+param al = 0.2 [0.05, 0.95] "α — contraction of y (dimension = 1 + ln2/|ln α|)."
+
+x' = mod(2*x + 1e-9*rand(), 1)   # tiny noise keeps the doubling map from collapsing in floating point
+y' = al*y + cos(4*pi*x)

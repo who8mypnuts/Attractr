@@ -1,0 +1,15 @@
+name: Rucklidge
+family: Flows
+desc: Double convection model — a thin, twisted double-scroll ribbon.
+ref: A. M. Rucklidge, J. Fluid Mech. 237 (1992)
+tags: flow, 3d
+dt: 0.01
+ic: 1 0 4.5
+camera: 25 20 0 1
+
+param kappa = 2.0 [0.5, 4] "κ — damping of the velocity mode."
+param lam = 6.7 [3, 10] "λ — forcing."
+
+dx = -kappa*x + lam*y - y*z
+dy = x
+dz = -z + y^2

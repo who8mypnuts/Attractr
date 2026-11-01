@@ -1,0 +1,17 @@
+name: Coullet
+family: Flows
+desc: The Coullet parametrisation of the Arneodo jerk system.
+
+tags: flow, 3d
+dt: 0.02
+ic: 0.1 0.1 0.1
+camera: 25 20 0 1
+
+param a = -0.8 [-1.5, 0]
+param b = 1.1 [0.5, 2]
+param c = 0.45 [0.1, 1]
+param d = -1.0 [-2, 0]
+
+dx = y
+dy = z
+dz = -a*x - b*y - c*z + d*x^3

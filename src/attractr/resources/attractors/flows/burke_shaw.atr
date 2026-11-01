@@ -1,0 +1,15 @@
+name: Burke-Shaw
+family: Flows
+desc: A fast double-spiral that winds into a tight tornado of nested shells — dense, galaxy-like swirls.
+ref: B. Burke & R. Shaw (1981); parameters after P. Bourke
+tags: flow, 3d
+dt: 0.005
+ic: 0.6 0.5 0.5
+camera: 25 25 0 1
+palette: electric
+param s = 10.0 [5, 15] "Coupling strength — drives the swirl rate. Higher winds the spiral tighter."
+param v = 4.272 [2, 7] "Lift — constant push on z."
+
+dx = -s*(x + y)
+dy = -y - s*x*z
+dz = s*x*y + v

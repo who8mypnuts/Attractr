@@ -1,0 +1,15 @@
+name: Bouali
+family: Flows
+desc: Bouali's system — a double-wing attractor from an economic model.
+ref: S. Bouali, Int. J. Bifurcation Chaos (2012)
+tags: flow, 3d
+dt: 0.005
+ic: 1 0.1 0.1
+camera: 25 20 0 1
+
+param a = 0.3 [0.1, 0.6]
+param s = 1.0 [0.5, 1.5]
+
+dx = x*(4 - y) + a*z
+dy = -y*(1 - x^2)
+dz = -x*(1.5 - s*z) - 0.05*z

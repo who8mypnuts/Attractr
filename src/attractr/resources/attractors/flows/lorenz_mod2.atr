@@ -1,0 +1,17 @@
+name: Lorenz mod 2
+family: Flows
+desc: A Lorenz variant with a second quadratic coupling — folded, ribbon-like wings.
+
+tags: flow, 3d
+dt: 0.01
+ic: 0.1 0.1 0.1
+camera: 25 20 0 1
+
+param a = 0.9 [0.5, 1.5]
+param b = 5.0 [3, 8]
+param c = 9.9 [5, 15]
+param d = 1.0 [0, 2]
+
+dx = -a*x + y^2 - z^2 + a*c
+dy = x*(y - b*z) + d
+dz = -z + x*(b*y + z)

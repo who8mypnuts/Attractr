@@ -1,0 +1,15 @@
+name: Sprott P
+family: Flows
+desc: One of J. C. Sprott's 19 simplest chaotic flows (case P) — five terms, one or two nonlinearities.
+ref: J. C. Sprott, "Some simple chaotic flows", Phys. Rev. E 50 (1994)
+tags: flow, sprott, 3d
+dt: 0.02
+ic: 0.1 0.1 0.1
+camera: 25 20 0 1
+
+param a = 2.7 [1.5, 4]
+param b = 1.0 [0.5, 2]
+
+dx = a*y + z
+dy = -x + y^2
+dz = x + b*y

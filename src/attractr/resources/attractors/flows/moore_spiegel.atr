@@ -1,0 +1,15 @@
+name: Moore-Spiegel
+family: Flows
+desc: A stellar-oscillation model (Moore & Spiegel 1966) — a twisted, single-lobed attractor.
+ref: D. W. Moore & E. A. Spiegel, Astrophys. J. 143 (1966)
+tags: flow, 3d
+dt: 0.01
+ic: 0.1 0.1 0.1
+camera: 25 20 0 1
+
+param T = 6 [3, 10]
+param R = 20 [10, 40]
+
+dx = y
+dy = z
+dz = -z - (T - R + R*x^2)*y - T*x

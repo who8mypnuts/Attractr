@@ -1,0 +1,19 @@
+name: Four-wing
+family: Flows
+desc: Four symmetric wings joined at the centre — one of the prettiest multi-wing systems.
+ref: Four-wing attractor — arXiv:2507.07577, Eq. 3.1
+tags: flow, 3d
+dt: 0.05
+ic: 1 1 1
+camera: 25 20 0 1
+palette: chaoscope
+param a = 0.2 [0, 0.5]
+param b = -0.01 [-0.1, 0.1]
+param c = 1.0 [0.5, 1.5]
+param d = -0.4 [-1, 0]
+param e = -1.0 [-2, 0]
+param f = -1.0 [-2, 0]
+
+dx = a*x + c*y*z
+dy = b*x + d*y - x*z
+dz = e*z + f*x*y

@@ -1,0 +1,14 @@
+name: Sprott A (Nosé–Hoover)
+family: Flows
+desc: Conservative — no parameters; a chaotic sea rather than an attractor.
+ref: J. C. Sprott, "Some simple chaotic flows", Phys. Rev. E 50 (1994)
+tags: flow, sprott, 3d
+dt: 0.02
+ic: 0 5 0
+camera: 25 20 0 1
+
+
+
+dx = y
+dy = -x + y*z
+dz = 1 - y^2

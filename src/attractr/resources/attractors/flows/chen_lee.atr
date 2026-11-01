@@ -1,0 +1,16 @@
+name: Chen-Lee
+family: Flows
+desc: Derived from the Euler equations of a rigid body — three symmetric, interleaved scrolls.
+ref: H.-K. Chen & C.-I. Lee, Chaos Solitons Fractals 21 (2004)
+tags: flow, 3d
+dt: 0.01
+ic: 0.1 0.1 0.1
+camera: 25 20 0 1
+
+param a = 5.0 [3, 7]
+param b = -10.0 [-15, -5]
+param c = -3.8 [-6, -1]
+
+dx = a*x - y*z
+dy = b*y + x*z
+dz = c*z + x*y/3

@@ -1,0 +1,50 @@
+#version 430
+// Add the per-pass fixed-point uint images into the float32 accumulators, then clear them.
+layout(local_size_x = 16, local_size_y = 16) in;
+layout(r32ui, binding = 0) uniform uimage2D img_count;
+layout(r32ui, binding = 1) uniform uimage2D img_depth;
+layout(r32ui, binding = 2) uniform uimage2D img_zmin;
+layout(r32ui, binding = 3) uniform uimage2D img_cv;
+layout(r32f,  binding = 4) uniform image2D acc_count;
+layout(r32f,  binding = 5) uniform image2D acc_depth;
+layout(r32f,  binding = 6) uniform image2D acc_zmin;
+layout(r32f,  binding = 7) uniform image2D acc_cv;
+uniform ivec2 u_size;
+uniform ivec4 u_flags;   // want_depth, want_zmin, want_color, -
+uniform vec2  u_cv_range;   // lo, hi-lo
+const float INV_FIXED = 1.0 / 256.0;
+
+float _unkey(uint k) {
+    uint f = (k & 0x80000000u) != 0u ? (k & 0x7FFFFFFFu) : ~k;
+    return uintBitsToFloat(f);
+}
+
+void main() {
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    if (p.x >= u_size.x || p.y >= u_size.y) return;
+    uint c = imageLoad(img_count, p).r;
+    if (c != 0u) {
+        float w = float(c) * INV_FIXED;
+        imageStore(acc_count, p, vec4(imageLoad(acc_count, p).r + w));
+        imageStore(img_count, p, uvec4(0u));
+        if (u_flags.x != 0) {
+            // stored Σ w·(depth·0.25 + 0.5) → Σ w·depth = (S − 0.5·w) · 4
+            float sd = float(imageLoad(img_depth, p).r) * INV_FIXED;
+            imageStore(acc_depth, p, vec4(imageLoad(acc_depth, p).r + (sd - 0.5 * w) * 4.0));
+            imageStore(img_depth, p, uvec4(0u));
+        }
+        if (u_flags.z != 0) {
+            float sc = float(imageLoad(img_cv, p).r) * INV_FIXED;   // Σ w·t,  t = (cv − lo)/(hi − lo)
+            imageStore(acc_cv, p, vec4(imageLoad(acc_cv, p).r + sc * u_cv_range.y + w * u_cv_range.x));
+            imageStore(img_cv, p, uvec4(0u));
+        }
+    }
+    if (u_flags.y != 0) {
+        uint zk = imageLoad(img_zmin, p).r;
+        if (zk != 0xFFFFFFFFu) {
+            float zc = _unkey(zk);
+            imageStore(acc_zmin, p, vec4(min(imageLoad(acc_zmin, p).r, zc)));
+            imageStore(img_zmin, p, uvec4(0xFFFFFFFFu));
+        }
+    }
+}

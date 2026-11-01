@@ -1,0 +1,73 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "attractr"
+version = "0.1.0.dev0"
+description = "Attractr — a strange-attractor studio: explore, edit, animate and render chaotic systems."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.11"
+authors = [{ name = "Attractr contributors" }]
+keywords = ["fractal", "strange attractor", "chaos", "rendering", "pyside6", "opengl"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Topic :: Multimedia :: Graphics",
+]
+dependencies = [
+    "PySide6>=6.6",
+    "numpy>=1.26",
+    "numba>=0.59",
+    "moderngl>=5.8",
+    "glcontext>=2.5",
+    "Pillow>=10",
+    "pyopencl>=2024.1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-qt>=4.4", "hypothesis>=6", "ruff>=0.5", "mypy>=1.10"]
+cl-cpu = ["pocl-binary-distribution>=3.0"]
+
+[project.scripts]
+attractr = "attractr.__main__:main"
+
+[project.gui-scripts]
+attractr-gui = "attractr.__main__:main_gui"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+attractr = ["resources/**/*", "core/render/shaders/*.glsl", "core/render/shaders/*.cl"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+src = ["src", "tests", "tools"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "N"]
+ignore = ["E501", "E741", "N802", "N803", "N806", "N815", "N812", "N818", "B008", "E731", "SIM108", "SIM105"]
+
+[tool.ruff.lint.per-file-ignores]
+"src/attractr/core/render/engines/cpu_kernel_template.py" = ["F821", "E501", "SIM102", "B007"]
+"src/attractr/core/formula/runtime_numba.py" = ["F401"]
+"src/attractr/core/render/engines/gl_engines.py" = ["B023"]
+"src/attractr/core/render/engines/opencl_engine.py" = ["B023"]
+
+[tool.mypy]
+python_version = "3.11"
+packages = ["attractr.core"]
+ignore_missing_imports = true
+warn_unused_ignores = true
+check_untyped_defs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+qt_api = "pyside6"

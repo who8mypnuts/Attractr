@@ -1,0 +1,15 @@
+name: Rabinovich-Fabrikant
+family: Flows
+desc: Plasma-physics waves — a delicate, layered attractor that is sensitive to the integration step.
+ref: M. I. Rabinovich & A. L. Fabrikant, Sov. Phys. JETP 50 (1979)
+tags: flow, 3d
+dt: 0.01
+ic: -1 0 0.5
+camera: 25 20 0 1
+
+param alpha = 0.14 [0.05, 0.3] "α"
+param gamma = 0.10 [0.05, 0.3] "γ"
+
+dx = y*(z - 1 + x^2) + gamma*x
+dy = x*(3*z + 1 - x^2) + gamma*y
+dz = -2*z*(alpha + x*y)

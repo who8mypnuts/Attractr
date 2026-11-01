@@ -1,0 +1,17 @@
+name: Arneodo
+family: Flows
+desc: Arneodo–Coullet–Tresser jerk system — a cubic jerk equation folding a single scroll.
+ref: A. Arneodo, P. Coullet & C. Tresser (1981)
+tags: flow, 3d
+dt: 0.02
+ic: 0.1 0.1 0.1
+camera: 25 20 0 1
+
+param a = -5.5 [-8, -3]
+param b = 3.5 [2, 5]
+param c = 1.0 [0.5, 2]
+param d = -1.0 [-2, 0]
+
+dx = y
+dy = z
+dz = -a*x - b*y - c*z + d*x^3

@@ -1,0 +1,15 @@
+name: Sprott B
+family: Flows
+desc: One of Sprott's minimal chaotic systems — just two quadratic terms, yet it traces a broad swirling disc.
+ref: J. C. Sprott, "Some simple chaotic flows", Phys. Rev. E 50 (1994)
+tags: flow, sprott, 3d
+dt: 0.02
+ic: 0.1 0.1 0.1
+camera: 25 20 0 1
+
+param a = 1.0 [0.5, 2] "Coupling — scales the y·z drive that feeds the swirl."
+param b = 1.0 [0.5, 2] "Damping of the z growth."
+
+dx = a*y*z
+dy = x - y
+dz = 1 - b*x*y

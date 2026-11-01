@@ -1,0 +1,14 @@
+name: Bedhead
+family: Maps
+desc: Ivan Emrich's "Bedhead" map — tangled, hair-like strands that fold over each other.
+ref: https://www.algosome.com/articles/strange-attractors-bedhead.html
+tags: map, 2d
+dims: 2
+warmup: 100
+ic: 1 1 0
+
+param a = -0.81 [-1, 1] "Cosine phase coupling between x and y."
+param b = -0.92 [-1, 1] "Divisor of the x·y and sin(y) terms — small |b| makes the strands wilder."
+
+x' = sin(x*y/b) + cos(a*x - y)
+y' = x + sin(y)/b

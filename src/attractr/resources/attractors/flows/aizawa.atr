@@ -1,0 +1,19 @@
+name: Aizawa
+family: Flows
+desc: A twisted torus. Loops wrap a central axis while drifting along it — produces shell- or Möbius-like shapes.
+ref: Aizawa system — ChaoticDynamicalSystemLibrary (Julia) docs
+tags: flow, 3d
+dt: 0.01
+ic: 0.1 0.1 0.1
+camera: 30 25 0 1
+
+param a = 0.95 [0, 2] "Drift along the central axis."
+param b = 0.7 [0, 2] "Radial contraction towards the axis."
+param c = 0.6 [0, 2] "Constant lift on z."
+param d = 3.5 [0, 5] "Rotation speed around the axis."
+param e = 0.25 [0, 1] "Coupling of z into the radial term."
+param f = 0.1 [0, 1] "Cubic x feedback into z — the asymmetry."
+
+dx = (z - b)*x - d*y
+dy = d*x + (z - b)*y
+dz = c + a*z - z^3/3 - (x^2 + y^2)*(1 + e*z) + f*z*x^3

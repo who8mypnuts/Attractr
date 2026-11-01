@@ -1,0 +1,47 @@
+# Chirikov standard map
+
+`standard_map` · map · 2-D · family: Maps
+
+![Chirikov standard map](images/standard_map.png)
+
+The kicked rotor — the archetype of Hamiltonian chaos: KAM islands in a chaotic sea (conservative, so many random starts are superposed).
+
+## Equations
+
+```text
+p = mod(y + K · sin(x), 2 · 3.141592654)
+x′ = mod(x + p, 2 · 3.141592654)
+y′ = p
+```
+
+## Parameters
+
+| Name | Default | Range | Meaning |
+|---|---|---|---|
+| K | 0.971635 | [0, 5] | Kick strength — the last KAM torus breaks at K ≈ 0.9716. |
+
+## References
+
+- B. V. Chirikov, Phys. Rep. 52 (1979)
+
+## Source (`.atr`)
+
+```text
+name: Chirikov standard map
+family: Maps
+desc: The kicked rotor — the archetype of Hamiltonian chaos: KAM islands in a chaotic sea (conservative, so many random starts are superposed).
+ref: B. V. Chirikov, Phys. Rep. 52 (1979)
+tags: map, 2d, conservative
+dims: 2
+ic: 3.14 3.14 0
+jitter: 6.28
+warmup: 0
+
+param K = 0.971635 [0, 5] "Kick strength — the last KAM torus breaks at K ≈ 0.9716."
+
+p  = mod(y + K*sin(x), 2*pi)
+x' = mod(x + p, 2*pi)
+y' = p
+```
+
+Render it: `attractr render standard_map --size 2048x2048 --report md`

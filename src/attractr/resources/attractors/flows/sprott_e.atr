@@ -1,0 +1,14 @@
+name: Sprott E
+family: Flows
+desc: One of J. C. Sprott's 19 simplest chaotic flows (case E) — five terms, one or two nonlinearities.
+ref: J. C. Sprott, "Some simple chaotic flows", Phys. Rev. E 50 (1994)
+tags: flow, sprott, 3d
+dt: 0.02
+ic: 0.1 0.1 0.1
+camera: 25 20 0 1
+
+
+
+dx = y*z
+dy = x^2 - y
+dz = 1 - 4*x

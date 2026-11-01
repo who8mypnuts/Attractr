@@ -1,0 +1,1009 @@
+{
+ "schema": 1,
+ "presets": [
+  {
+   "name": "Classic",
+   "attractor": "clifford",
+   "params": {
+    "a": -1.4,
+    "b": 1.6,
+    "c": 1.0,
+    "d": 0.7,
+    "e": 1.5,
+    "f": 0.5
+   },
+   "camera": {
+    "yaw": 0,
+    "pitch": 0,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "nebula",
+   "style": "gas",
+   "source": "chaoscope_original"
+  },
+  {
+   "name": "Filigree",
+   "attractor": "clifford",
+   "params": {
+    "a": -1.7,
+    "b": 1.8,
+    "c": 0.9,
+    "d": 0.6,
+    "e": 2.0,
+    "f": 0.7
+   },
+   "camera": {
+    "yaw": 35,
+    "pitch": -20,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "aurora",
+   "style": "dust",
+   "source": "chaoscope_original"
+  },
+  {
+   "name": "Ember",
+   "attractor": "clifford",
+   "params": {
+    "a": -1.2,
+    "b": 1.4,
+    "c": 1.1,
+    "d": 0.8,
+    "e": 1.0,
+    "f": 0.4
+   },
+   "camera": {
+    "yaw": -25,
+    "pitch": 15,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "fire",
+   "style": "plasma",
+   "source": "chaoscope_original"
+  },
+  {
+   "name": "Shells",
+   "attractor": "de_jong",
+   "params": {
+    "a": -2.0,
+    "b": -2.0,
+    "c": -1.2,
+    "d": 2.0,
+    "e": 1.8,
+    "f": -1.5
+   },
+   "camera": {
+    "yaw": 0,
+    "pitch": 0,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "electric",
+   "style": "gas",
+   "source": "chaoscope_original"
+  },
+  {
+   "name": "Storm",
+   "attractor": "de_jong",
+   "params": {
+    "a": -2.4,
+    "b": -1.6,
+    "c": -1.0,
+    "d": 2.2,
+    "e": 2.0,
+    "f": -1.8
+   },
+   "camera": {
+    "yaw": 40,
+    "pitch": 25,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "nebula",
+   "style": "liquid",
+   "source": "chaoscope_original"
+  },
+  {
+   "name": "Filament",
+   "attractor": "de_jong",
+   "params": {
+    "a": -1.8,
+    "b": -2.2,
+    "c": -1.4,
+    "d": 1.7,
+    "e": 1.5,
+    "f": -1.2
+   },
+   "camera": {
+    "yaw": 0,
+    "pitch": 0,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "aurora",
+   "style": "gas",
+   "source": "chaoscope_original"
+  },
+  {
+   "name": "Jellyfish",
+   "attractor": "gumowski_mira",
+   "params": {
+    "a": 0.008,
+    "mu": -0.496
+   },
+   "camera": {
+    "yaw": 0,
+    "pitch": 0,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "nebula",
+   "style": "gas",
+   "source": "chaoscope_original"
+  },
+  {
+   "name": "Coral",
+   "attractor": "gumowski_mira",
+   "params": {
+    "a": 0.02,
+    "mu": -0.7
+   },
+   "camera": {
+    "yaw": 0,
+    "pitch": 0,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "fire",
+   "style": "liquid",
+   "source": "chaoscope_original"
+  },
+  {
+   "name": "Bloom",
+   "attractor": "gumowski_mira",
+   "params": {
+    "a": 0.005,
+    "mu": -0.3
+   },
+   "camera": {
+    "yaw": 0,
+    "pitch": 0,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "aurora",
+   "style": "gas",
+   "source": "chaoscope_original"
+  },
+  {
+   "name": "Butterfly",
+   "attractor": "lorenz",
+   "params": {
+    "sigma": 10,
+    "rho": 28,
+    "beta": 2.667
+   },
+   "camera": {
+    "yaw": 25,
+    "pitch": 15,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "nebula",
+   "style": "gas",
+   "source": "chaoscope_original"
+  },
+  {
+   "name": "Side Wing",
+   "attractor": "lorenz",
+   "params": {
+    "sigma": 10,
+    "rho": 28,
+    "beta": 2.667
+   },
+   "camera": {
+    "yaw": 90,
+    "pitch": 0,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "fire",
+   "style": "gas",
+   "source": "chaoscope_original"
+  },
+  {
+   "name": "Storm Cell",
+   "attractor": "lorenz",
+   "params": {
+    "sigma": 10,
+    "rho": 40,
+    "beta": 2.667
+   },
+   "camera": {
+    "yaw": 35,
+    "pitch": 20,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "electric",
+   "style": "plasma",
+   "source": "chaoscope_original"
+  },
+  {
+   "name": "Spiral",
+   "attractor": "rossler",
+   "params": {
+    "a": 0.2,
+    "b": 0.2,
+    "c": 5.7
+   },
+   "camera": {
+    "yaw": 20,
+    "pitch": 30,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "aurora",
+   "style": "gas",
+   "source": "chaoscope_original"
+  },
+  {
+   "name": "Funnel",
+   "attractor": "rossler",
+   "params": {
+    "a": 0.2,
+    "b": 0.2,
+    "c": 8.0
+   },
+   "camera": {
+    "yaw": 45,
+    "pitch": 10,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "fire",
+   "style": "liquid",
+   "source": "chaoscope_original"
+  },
+  {
+   "name": "Pinball",
+   "attractor": "rossler",
+   "params": {
+    "a": 0.1,
+    "b": 0.1,
+    "c": 5.7
+   },
+   "camera": {
+    "yaw": 0,
+    "pitch": 60,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "electric",
+   "style": "dust",
+   "source": "chaoscope_original"
+  },
+  {
+   "name": "Torus",
+   "attractor": "aizawa",
+   "params": {
+    "a": 0.95,
+    "b": 0.7,
+    "c": 0.6,
+    "d": 3.5,
+    "e": 0.25,
+    "f": 0.1
+   },
+   "camera": {
+    "yaw": 30,
+    "pitch": 25,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "nebula",
+   "style": "gas",
+   "source": "chaoscope_original"
+  },
+  {
+   "name": "M\u00f6bius",
+   "attractor": "aizawa",
+   "params": {
+    "a": 0.95,
+    "b": 0.7,
+    "c": 0.6,
+    "d": 3.5,
+    "e": 0.4,
+    "f": 0.1
+   },
+   "camera": {
+    "yaw": 60,
+    "pitch": 10,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "aurora",
+   "style": "liquid",
+   "source": "chaoscope_original"
+  },
+  {
+   "name": "Coil",
+   "attractor": "aizawa",
+   "params": {
+    "a": 0.95,
+    "b": 0.7,
+    "c": 0.6,
+    "d": 3.5,
+    "e": 0.25,
+    "f": 0.1
+   },
+   "camera": {
+    "yaw": 80,
+    "pitch": 5,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "fire",
+   "style": "gas",
+   "source": "chaoscope_original"
+  },
+  {
+   "name": "Yarn Ball",
+   "attractor": "thomas",
+   "params": {
+    "b": 0.208186
+   },
+   "camera": {
+    "yaw": 30,
+    "pitch": 30,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "electric",
+   "style": "gas",
+   "source": "chaoscope_original"
+  },
+  {
+   "name": "Hyperchaos",
+   "attractor": "thomas",
+   "params": {
+    "b": 0.15
+   },
+   "camera": {
+    "yaw": 45,
+    "pitch": 20,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "nebula",
+   "style": "dust",
+   "source": "chaoscope_original"
+  },
+  {
+   "name": "Lattice",
+   "attractor": "thomas",
+   "params": {
+    "b": 0.19
+   },
+   "camera": {
+    "yaw": 0,
+    "pitch": 0,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "aurora",
+   "style": "gas",
+   "source": "chaoscope_original"
+  },
+  {
+   "name": "Ribbon",
+   "attractor": "dadras",
+   "params": {
+    "a": 3,
+    "b": 2.7,
+    "c": 1.7,
+    "d": 2,
+    "e": 9
+   },
+   "camera": {
+    "yaw": 25,
+    "pitch": 20,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "aurora",
+   "style": "gas",
+   "source": "chaoscope_original"
+  },
+  {
+   "name": "Tempest",
+   "attractor": "dadras",
+   "params": {
+    "a": 3.5,
+    "b": 3.0,
+    "c": 1.7,
+    "d": 2,
+    "e": 11
+   },
+   "camera": {
+    "yaw": 40,
+    "pitch": 15,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "fire",
+   "style": "gas",
+   "source": "chaoscope_original"
+  },
+  {
+   "name": "Mist",
+   "attractor": "dadras",
+   "params": {
+    "a": 2.5,
+    "b": 2.4,
+    "c": 1.5,
+    "d": 2,
+    "e": 7
+   },
+   "camera": {
+    "yaw": 10,
+    "pitch": 35,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "electric",
+   "style": "dust",
+   "source": "chaoscope_original"
+  },
+  {
+   "name": "Mandala",
+   "attractor": "symmetric_icon",
+   "params": {
+    "lam": -2.5,
+    "al": 5.0,
+    "be": -1.8,
+    "ga": 1.0,
+    "om": 0,
+    "n": 3
+   },
+   "camera": {
+    "yaw": 25,
+    "pitch": 30,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "nebula",
+   "style": "gas",
+   "source": "chaoscope_original"
+  },
+  {
+   "name": "Sunwheel",
+   "attractor": "symmetric_icon",
+   "params": {
+    "lam": -2.0,
+    "al": 6.0,
+    "be": -1.5,
+    "ga": 1.2,
+    "om": 0,
+    "n": 3
+   },
+   "camera": {
+    "yaw": 35,
+    "pitch": 20,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "fire",
+   "style": "plasma",
+   "source": "chaoscope_original"
+  },
+  {
+   "name": "Snowflake",
+   "attractor": "symmetric_icon",
+   "params": {
+    "lam": -2.34,
+    "al": 2.0,
+    "be": 0.2,
+    "ga": 0.1,
+    "om": 0,
+    "n": 6
+   },
+   "camera": {
+    "yaw": 20,
+    "pitch": 35,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "electric",
+   "style": "gas",
+   "source": "chaoscope_original"
+  },
+  {
+   "name": "Fern",
+   "attractor": "barnsley_fern",
+   "params": {
+    "width": 1.0,
+    "lean": 0.0,
+    "twist": 0.0
+   },
+   "camera": {
+    "yaw": 0,
+    "pitch": 0,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "matrix",
+   "style": "gas",
+   "source": "chaoscope_original"
+  },
+  {
+   "name": "Spiral Fern",
+   "attractor": "barnsley_fern",
+   "params": {
+    "width": 1.0,
+    "lean": 0.0,
+    "twist": 0.3
+   },
+   "camera": {
+    "yaw": 0,
+    "pitch": 55,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "aurora",
+   "style": "gas",
+   "source": "chaoscope_original"
+  },
+  {
+   "name": "Broadleaf",
+   "attractor": "barnsley_fern",
+   "params": {
+    "width": 1.1,
+    "lean": 0.0,
+    "twist": 0.15
+   },
+   "camera": {
+    "yaw": 20,
+    "pitch": 10,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "fire",
+   "style": "liquid",
+   "source": "chaoscope_original"
+  },
+  {
+   "name": "Dragon",
+   "attractor": "julia_quaternion",
+   "params": {
+    "c_re": -0.7,
+    "c_im": 0.27,
+    "c_j": 0.0
+   },
+   "camera": {
+    "yaw": 0,
+    "pitch": 0,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "nebula",
+   "style": "gas",
+   "source": "chaoscope_original"
+  },
+  {
+   "name": "Bud",
+   "attractor": "julia_quaternion",
+   "params": {
+    "c_re": -0.2,
+    "c_im": 0.6,
+    "c_j": 0.2
+   },
+   "camera": {
+    "yaw": 30,
+    "pitch": 20,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "electric",
+   "style": "gas",
+   "source": "chaoscope_original"
+  },
+  {
+   "name": "Bulb",
+   "attractor": "julia_quaternion",
+   "params": {
+    "c_re": 0.0,
+    "c_im": 0.5,
+    "c_j": 0.5
+   },
+   "camera": {
+    "yaw": 30,
+    "pitch": 20,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "aurora",
+   "style": "gas",
+   "source": "chaoscope_original"
+  },
+  {
+   "name": "Wings",
+   "attractor": "pickover",
+   "params": {
+    "a": 2.24,
+    "b": 0.43,
+    "c": -0.65,
+    "d": -2.43
+   },
+   "camera": {
+    "yaw": 25,
+    "pitch": 20,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "nebula",
+   "style": "gas",
+   "source": "chaoscope_original"
+  },
+  {
+   "name": "Conch",
+   "attractor": "pickover",
+   "params": {
+    "a": 2.1,
+    "b": 0.5,
+    "c": -0.7,
+    "d": -2.3
+   },
+   "camera": {
+    "yaw": 40,
+    "pitch": 15,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "fire",
+   "style": "gas",
+   "source": "chaoscope_original"
+  },
+  {
+   "name": "Veil",
+   "attractor": "pickover",
+   "params": {
+    "a": 2.3,
+    "b": 0.35,
+    "c": -0.6,
+    "d": -2.5
+   },
+   "camera": {
+    "yaw": 15,
+    "pitch": 35,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "aurora",
+   "style": "gas",
+   "source": "chaoscope_original"
+  },
+  {
+   "name": "Pretzel",
+   "attractor": "halvorsen",
+   "params": {
+    "a": 1.89
+   },
+   "camera": {
+    "yaw": 30,
+    "pitch": 20,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "aurora",
+   "style": "gas",
+   "source": "chaoscope_original"
+  },
+  {
+   "name": "Knot",
+   "attractor": "halvorsen",
+   "params": {
+    "a": 1.89
+   },
+   "camera": {
+    "yaw": 60,
+    "pitch": 10,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "nebula",
+   "style": "dust",
+   "source": "chaoscope_original"
+  },
+  {
+   "name": "Coil",
+   "attractor": "halvorsen",
+   "params": {
+    "a": 1.89
+   },
+   "camera": {
+    "yaw": 90,
+    "pitch": 5,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "fire",
+   "style": "plasma",
+   "source": "chaoscope_original"
+  },
+  {
+   "name": "Galaxy",
+   "attractor": "burke_shaw",
+   "params": {
+    "s": 10,
+    "v": 4.272
+   },
+   "camera": {
+    "yaw": 25,
+    "pitch": 25,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "electric",
+   "style": "gas",
+   "source": "chaoscope_original"
+  },
+  {
+   "name": "Tornado",
+   "attractor": "burke_shaw",
+   "params": {
+    "s": 10,
+    "v": 4.272
+   },
+   "camera": {
+    "yaw": 90,
+    "pitch": 0,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "fire",
+   "style": "liquid",
+   "source": "chaoscope_original"
+  },
+  {
+   "name": "Whirlpool",
+   "attractor": "burke_shaw",
+   "params": {
+    "s": 10,
+    "v": 4.272
+   },
+   "camera": {
+    "yaw": 10,
+    "pitch": 35,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "aurora",
+   "style": "dust",
+   "source": "chaoscope_original"
+  },
+  {
+   "name": "Disc",
+   "attractor": "sprott_b",
+   "params": {
+    "a": 1,
+    "b": 1
+   },
+   "camera": {
+    "yaw": 30,
+    "pitch": 20,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "nebula",
+   "style": "gas",
+   "source": "chaoscope_original"
+  },
+  {
+   "name": "Halo",
+   "attractor": "sprott_b",
+   "params": {
+    "a": 1,
+    "b": 1
+   },
+   "camera": {
+    "yaw": 0,
+    "pitch": 60,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "aurora",
+   "style": "gas",
+   "source": "chaoscope_original"
+  },
+  {
+   "name": "Vortex",
+   "attractor": "sprott_b",
+   "params": {
+    "a": 1,
+    "b": 1
+   },
+   "camera": {
+    "yaw": 60,
+    "pitch": 10,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "fire",
+   "style": "liquid",
+   "source": "chaoscope_original"
+  },
+  {
+   "name": "Climate",
+   "attractor": "lorenz84",
+   "params": {
+    "a": 0.25,
+    "b": 4.0,
+    "F": 8.0,
+    "G": 1.0
+   },
+   "camera": {
+    "yaw": 30,
+    "pitch": 25,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "electric",
+   "style": "gas",
+   "source": "chaoscope_original"
+  },
+  {
+   "name": "Jet",
+   "attractor": "lorenz84",
+   "params": {
+    "a": 0.25,
+    "b": 4.0,
+    "F": 6.5,
+    "G": 1.0
+   },
+   "camera": {
+    "yaw": 60,
+    "pitch": 15,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "nebula",
+   "style": "liquid",
+   "source": "chaoscope_original"
+  },
+  {
+   "name": "Monsoon",
+   "attractor": "lorenz84",
+   "params": {
+    "a": 0.3,
+    "b": 4.0,
+    "F": 9.5,
+    "G": 1.3
+   },
+   "camera": {
+    "yaw": 15,
+    "pitch": 35,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "aurora",
+   "style": "dust",
+   "source": "chaoscope_original"
+  },
+  {
+   "name": "Banana",
+   "attractor": "henon",
+   "params": {
+    "a": 1.4,
+    "b": 0.3
+   },
+   "camera": {
+    "yaw": 0,
+    "pitch": 0,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "nebula",
+   "style": "gas",
+   "source": "chaoscope_original"
+  },
+  {
+   "name": "Filament",
+   "attractor": "henon",
+   "params": {
+    "a": 1.39,
+    "b": 0.27
+   },
+   "camera": {
+    "yaw": 0,
+    "pitch": 0,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "electric",
+   "style": "dust",
+   "source": "chaoscope_original"
+  },
+  {
+   "name": "Crescent",
+   "attractor": "henon",
+   "params": {
+    "a": 1.4,
+    "b": 0.2
+   },
+   "camera": {
+    "yaw": 0,
+    "pitch": 0,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "fire",
+   "style": "plasma",
+   "source": "chaoscope_original"
+  },
+  {
+   "name": "Four-wing classic",
+   "attractor": "fourwing",
+   "params": {},
+   "camera": {
+    "yaw": 25,
+    "pitch": 20,
+    "roll": 0,
+    "zoom": 1
+   },
+   "palette": "chaoscope",
+   "style": "gas",
+   "source": "chaoscope_rewrite"
+  },
+  {
+   "name": "Thomas rainbow speed",
+   "attractor": "thomas",
+   "params": {
+    "b": 0.208186
+   },
+   "camera": {
+    "yaw": 30,
+    "pitch": 20,
+    "roll": 0,
+    "zoom": 1
+   },
+   "palette": "prism",
+   "style": "gas",
+   "color_source": "speed",
+   "source": "chaoscope_rewrite"
+  },
+  {
+   "name": "Bedhead",
+   "attractor": "bedhead",
+   "params": {
+    "a": -0.81,
+    "b": -0.92
+   },
+   "camera": {
+    "yaw": 0,
+    "pitch": 0,
+    "roll": 0,
+    "zoom": 1
+   },
+   "palette": "dark",
+   "style": "gas",
+   "source": "strange-attractors-webgl"
+  },
+  {
+   "name": "Fractal Dream",
+   "attractor": "fractal_dream",
+   "params": {},
+   "camera": {
+    "yaw": 0,
+    "pitch": 0,
+    "roll": 0,
+    "zoom": 1
+   },
+   "palette": "duotone",
+   "style": "gas",
+   "source": "strange-attractors-webgl"
+  }
+ ]
+}

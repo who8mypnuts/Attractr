@@ -1,0 +1,16 @@
+name: Qi-Chen
+family: Flows
+desc: A four-wing system by Qi, Chen et al.
+ref: G. Qi et al., Chaos Solitons Fractals (2005)
+tags: flow, 3d
+dt: 0.001
+ic: 0.1 0.1 0.1
+camera: 25 20 0 1
+
+param a = 38 [30, 45]
+param b = 8/3 [1, 5]
+param c = 80 [60, 100]
+
+dx = a*(y - x) + y*z
+dy = c*x + y - x*z
+dz = x*y - b*z

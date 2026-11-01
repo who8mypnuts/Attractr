@@ -1,0 +1,18 @@
+name: Liu
+family: Flows
+desc: Liu's system — Lorenz-like with a squared term.
+ref: C. Liu et al., Chaos Solitons Fractals 22 (2004)
+tags: flow, 3d
+dt: 0.002
+ic: 0.1 0.1 0.1
+camera: 25 20 0 1
+
+param a = 10 [5, 15]
+param b = 40 [30, 50]
+param c = 2.5 [1, 4]
+param k = 1 [0.5, 2]
+param h = 4 [2, 6]
+
+dx = a*(y - x)
+dy = b*x - k*x*z
+dz = -c*z + h*x^2

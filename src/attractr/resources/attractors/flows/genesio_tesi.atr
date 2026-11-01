@@ -1,0 +1,16 @@
+name: Genesio-Tesi
+family: Flows
+desc: A jerk system from control theory — a single folded scroll.
+ref: R. Genesio & A. Tesi, Automatica 28 (1992)
+tags: flow, 3d
+dt: 0.01
+ic: 0.1 0.1 0.1
+camera: 25 20 0 1
+
+param a = 0.44 [0.2, 0.6]
+param b = 1.1 [0.8, 1.4]
+param c = 1.0 [0.8, 1.2]
+
+dx = y
+dy = z
+dz = -c*x - b*y - a*z + x^2

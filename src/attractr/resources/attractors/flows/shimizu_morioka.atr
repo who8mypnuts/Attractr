@@ -1,0 +1,15 @@
+name: Shimizu-Morioka
+family: Flows
+desc: A Lorenz-like system near the homoclinic butterfly — thin, delicate wings.
+ref: T. Shimizu & N. Morioka, Phys. Lett. A 76 (1980)
+tags: flow, 3d
+dt: 0.01
+ic: 0.1 0.1 0.1
+camera: 25 20 0 1
+
+param a = 0.75 [0.5, 1]
+param b = 0.45 [0.2, 0.8]
+
+dx = y
+dy = x - a*y - x*z
+dz = -b*z + x^2

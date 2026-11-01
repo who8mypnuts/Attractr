@@ -1,0 +1,14 @@
+name: Thomas
+family: Flows
+desc: Cyclically symmetric — the same equation in x, y, and z. Looks like a tangled ball of yarn; below b ≈ 0.21 it becomes hyper-chaotic.
+ref: R. Thomas, "Deterministic chaos seen in terms of feedback circuits", Int. J. Bifurcation Chaos 9 (1999)
+tags: flow, 3d
+dt: 0.05
+ic: 0.1 0 0
+camera: 30 30 0 1
+palette: electric
+param b = 0.208186 [0.05, 0.5] "Damping — lower values make the orbit more chaotic. Below ≈ 0.21 it becomes hyperchaotic."
+
+dx = sin(y) - b*x
+dy = sin(z) - b*y
+dz = sin(x) - b*z
