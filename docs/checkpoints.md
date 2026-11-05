@@ -21,10 +21,16 @@ that was reached.
 * CLI: `attractr render … --finish-after SEC` (a soft time limit).
 
 Tiled GPU renders are **interleaved**: every tile is visited in 8 rounds (its trajectory
-state stays on the GPU, the big accumulation images are re-uploaded per visit), so all
-tiles are always within one round of each other. A soft stop therefore yields a uniform
-image (every tile ends at the same step count), partial results arrive once per round,
-and checkpoints of tiled renders are ordinary uniform checkpoints.
+state stays on the GPU, the accumulation images are re-uploaded per visit), so all tiles
+are always within one round of each other. A soft stop lets the tiles that are behind catch
+up to the most advanced one, so the image is uniform (every tile ends at the same step
+count); partial results arrive once per round, and checkpoints of tiled renders are
+ordinary uniform checkpoints. The scheduling lives in one place for all GPU engines
+(`core/render/engines/tiling.py`).
+
+Engine failures use the same mechanism internally: when a GPU engine dies mid-render, the
+pipeline takes the last uniform partial as a checkpoint and continues on the CPU engine, so
+nothing accumulated so far is lost.
 
 ## 3. Checkpoints & resume
 

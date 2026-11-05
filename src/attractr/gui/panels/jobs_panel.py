@@ -19,6 +19,7 @@ THUMB = 112
 
 
 class JobRow(QWidget):
+    """One queued job: thumbnail, progress bar, ETA and the cancel / finish / checkpoint buttons."""
     def __init__(self, job: Job, queue: JobQueue, parent=None) -> None:
         super().__init__(parent)
         self.job = job
@@ -63,24 +64,29 @@ class JobRow(QWidget):
         self.develop.imageReady.connect(self._on_thumb)
 
     def _finish(self) -> None:
+        """Ask the job for a soft stop."""
         self.job.finish_now()
         self.btn_finish.setEnabled(False)
         self.bar.setFormat(tr("finishing…"))
 
     def on_progress(self, p: Progress) -> None:
+        """Update the bar and the ETA."""
         self.bar.setValue(int(p.fraction * 1000))
         self.bar.setFormat(f"{p.fraction * 100:.1f} %  {p.message}")
         self.eta.setText(f"ETA {p.format_eta()}")
 
     def on_partial(self, result: object) -> None:
+        """Develop a shrunken copy of a partial result for the thumbnail."""
         if isinstance(result, RenderResult):
             self.develop.request(shrink_result(result, THUMB), result.settings.look)
 
     def _on_thumb(self, img, dev, result) -> None:
+        """Show the developed thumbnail."""
         self.thumb.setVisible(True)
         self.thumb.setPixmap(QPixmap.fromImage(img).scaled(THUMB, THUMB, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
 
     def finish(self) -> None:
+        """Freeze the row once the job ended (done / failed / cancelled)."""
         state = self.job.state
         self.bar.setValue(1000 if state == "done" else self.bar.value())
         self.bar.setFormat({"done": "done", "failed": "failed", "cancelled": "cancelled"}.get(state, state))
@@ -96,6 +102,7 @@ class JobRow(QWidget):
 
 
 class JobsPanel(QWidget):
+    """The render queue dock."""
     def __init__(self, queue: JobQueue, parent=None) -> None:
         super().__init__(parent)
         self.queue = queue
@@ -123,16 +130,19 @@ class JobsPanel(QWidget):
         queue.job_ended.connect(self.job_ended)
 
     def add_job(self, job: Job) -> None:
+        """Add a row for a newly queued job."""
         row = JobRow(job, self.queue)
         self.rows[job.id] = row
         self.lay.insertWidget(self.lay.count() - 1, row)
 
     def job_ended(self, job: Job) -> None:
+        """Freeze the row of a finished job."""
         row = self.rows.get(job.id)
         if row:
             row.finish()
 
     def clear_finished(self) -> None:
+        """Remove the rows of jobs that are no longer running or pending."""
         for jid, row in list(self.rows.items()):
             if row.job.state in ("done", "failed", "cancelled"):
                 row.setParent(None)

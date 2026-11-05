@@ -28,6 +28,7 @@ from attractr.core.project.render_presets import RenderPreset, render_presets
 from attractr.core.render.engines import selector
 from attractr.core.render.settings import REPORT_FORMATS, RenderSettings
 from attractr.gui.controllers.render_job import RenderJob
+from attractr.gui.state.render_prefs import KEY_FOLDER, KEY_REPORT, KEY_REPORT_FMT, KEY_TEMPLATE, RenderPrefs
 from attractr.i18n import tr
 
 SIZE_PRESETS = [
@@ -123,12 +124,13 @@ class RenderDialog(QDialog):
         g = QGroupBox(tr("Output"))
         f = QFormLayout(g)
         row = QHBoxLayout()
-        self.folder = QLineEdit(self.qs.value("render/folder", str(Path.home() / "Attractr")))
+        prefs = RenderPrefs.load(self.qs)
+        self.folder = QLineEdit(str(prefs.folder))
         self.btn_folder = QPushButton("…")
         self.btn_folder.setFixedWidth(32)
         row.addWidget(self.folder, 1)
         row.addWidget(self.btn_folder)
-        self.template = QLineEdit(self.qs.value("render/template", DEFAULT_TEMPLATE))
+        self.template = QLineEdit(prefs.template)
         self.template.setToolTip(tr("Fields: {name} {date} {time} {datetime} {w} {h} {seed} {style} {ppp}"))
         self.fmt = QComboBox()
         self.fmt.addItems(["png", "jpg", "webp", "tif"])
@@ -145,11 +147,11 @@ class RenderDialog(QDialog):
         g = QGroupBox(tr("Render report"))
         f = QFormLayout(g)
         self.report_on = QCheckBox(tr("Write a render report next to the image"))
-        self.report_on.setChecked(self.qs.value("render/report", "true") == "true")
+        self.report_on.setChecked(bool(prefs.report_formats))
         self.report_fmt = QComboBox()
         for k in REPORT_FORMATS:
             self.report_fmt.addItem(REPORT_LABELS[k], k)
-        self.report_fmt.setCurrentIndex(max(0, list(REPORT_FORMATS).index(self.qs.value("render/report_fmt", "md"))))
+        self.report_fmt.setCurrentIndex(max(0, list(REPORT_FORMATS).index(prefs.report_formats[0] if prefs.report_formats else "md")))
         self.report_dyn = QCheckBox(tr("Include dynamics (Lyapunov exponent, dimension)"))
         f.addRow(self.report_on)
         f.addRow(tr("Format"), self.report_fmt)
@@ -287,8 +289,19 @@ class RenderDialog(QDialog):
             if c.available and c.mpts_per_second:
                 rate = max(rate, c.mpts_per_second)
         est = f"~{pts / (rate * 1e6):.0f} s on GPU" if rate else ""
-        mem = self.width.value() * self.height.value() * self.ss.value() ** 2 * 4 * 4 / (1024 * 1024)
-        self.estimate.setText(f"{est}  · accumulation buffers ≈ {mem:.0f} MB{' (tiled)' if mem > 768 else ''}".strip(" ·"))
+        try:
+            from attractr.core.render.memory import estimate_host_bytes, memory_warning
+
+            current = self.get_settings()
+            s = replace(current, quality=replace(current.quality, width=self.width.value(), height=self.height.value(), supersample=self.ss.value()))
+            mem = estimate_host_bytes(s) / 2**20
+            warn = memory_warning(s)
+        except Exception:  # noqa: BLE001
+            mem, warn = 0.0, ""
+        self.estimate.setText(f"{est}  · host memory ≈ {mem:.0f} MB".strip(" ·"))
+        if warn:
+            self.hint_label.setText((self.hint_label.text() + "\n" + warn).strip())
+            self.hint_label.setVisible(True)
         _ = caps
 
     def quality_hint(self, ppp: float) -> str:
@@ -320,10 +333,10 @@ class RenderDialog(QDialog):
         reports = [self.report_fmt.currentData()] if self.report_on.isChecked() else []
         job = RenderJob(s, Path(self.folder.text()).expanduser(), self.template.text() or DEFAULT_TEMPLATE,
                         fmt=self.fmt.currentText(), bit_depth=int(self.bits.currentText()), report_formats=reports,
-                        dynamics=self.report_dyn.isChecked(), checkpoint_every=60.0 * float(self.qs.value("render/checkpoint_minutes", 2.0)))
-        for k, v in (("render/folder", self.folder.text()), ("render/template", self.template.text()),
-                     ("render/report", "true" if self.report_on.isChecked() else "false"),
-                     ("render/report_fmt", self.report_fmt.currentData()), ("render/size_preset", self.size_preset.currentIndex()),
+                        dynamics=self.report_dyn.isChecked(), checkpoint_every=RenderPrefs.load(self.qs).checkpoint_every)
+        for k, v in ((KEY_FOLDER, self.folder.text()), (KEY_TEMPLATE, self.template.text()),
+                     (KEY_REPORT, "true" if self.report_on.isChecked() else "false"),
+                     (KEY_REPORT_FMT, self.report_fmt.currentData()), ("render/size_preset", self.size_preset.currentIndex()),
                      ("render/tier", self.tier.currentIndex()), ("render/ss", self.ss.value()), ("render/splat", self.splat.value())):
             self.qs.setValue(k, v)
         self.jobCreated.emit(job)

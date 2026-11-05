@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import math
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import replace
 
 import numba
 import numpy as np
@@ -14,70 +12,75 @@ import numpy as np
 from attractr.core.attractors.spec import AttractorSpec
 from attractr.core.jobs.cancel import NEVER, CancelToken
 from attractr.core.jobs.progress import ProgressTracker
-from attractr.core.render.accumulators import needs_for
-from attractr.core.render.camera import Camera
 from attractr.core.render.checkpoint import Checkpoint
-from attractr.core.render.engines.base import Engine, EngineCaps, PassSink, resume_plan
+from attractr.core.render.engines.base import Engine, EngineCaps, PassSink
 from attractr.core.render.engines.cpu_compile import kernel_module
-from attractr.core.render.engines.state import seed_from_points
-from attractr.core.render.framing import compute_framing
-from attractr.core.render.result import Framing, RenderResult, RenderStats
+from attractr.core.render.engines.setup import RenderPlan, prepare, splat_kernel
+from attractr.core.render.engines.state import TrajectoryState, seed_from_points
+from attractr.core.render.engines.tiling import Tile, TileSchedule, downsample
+from attractr.core.render.result import RenderResult, RenderStats
 from attractr.core.render.settings import RenderSettings
 from attractr.core.render.stats import summarize
 
 MEMORY_BUDGET_BYTES = int(float(os.environ.get("ATTRACTR_CPU_BUDGET_MB", "1024")) * 1024 * 1024)
 TARGET_PASS_SECONDS = 0.35
 WARMUP_CHUNK = 100
-ACCUM_WARMUP = 64  # steps after seeding from on-attractor points
+MIN_STEPS_PER_PASS, MAX_STEPS_PER_PASS, INITIAL_STEPS_PER_PASS = 4, 4096, 8
 
 
-def splat_kernel(r: int) -> np.ndarray:
-    """Soft-disk kernel of radius r, flattened, weights summing to 1 (r = 0 → [1])."""
-    if r <= 0:
-        return np.ones(1, dtype=np.float64)
-    kn = 2 * r + 1
-    k = np.zeros((kn, kn), dtype=np.float64)
-    for dy in range(-r, r + 1):
-        for dx in range(-r, r + 1):
-            d2 = dx * dx + dy * dy
-            if d2 <= r * r + r:
-                k[dy + r, dx + r] = max(0.0, 1.0 - math.sqrt(d2) / (r + 1))
-    k /= k.sum()
-    return k.ravel()
+def cpu_budget() -> int:
+    """Bytes the per-thread accumulation buffers may take: the env override, else a quarter of
+    the currently available RAM (so an A3 render never pushes the machine into swap)."""
+    if os.environ.get("ATTRACTR_CPU_BUDGET_MB"):
+        return MEMORY_BUDGET_BYTES
+    try:
+        import psutil
+
+        avail = int(psutil.virtual_memory().available)
+    except Exception:  # noqa: BLE001 — psutil missing or unsupported platform
+        return MEMORY_BUDGET_BYTES
+    return int(min(max(avail * 0.25, 512 * 1024 * 1024), 8 * 1024**3))
 
 
-def apply_lock(framing: Framing, cam: Camera) -> Framing:
-    """Replace the fitted sphere by the camera's locked one (animations)."""
-    if not cam.locked:
-        return framing
-    return Framing(tuple(cam.lock_center), float(cam.lock_radius), framing.bbox_min, framing.bbox_max)  # type: ignore[arg-type]
+def _sum_slices(buf: np.ndarray) -> np.ndarray:
+    """Σ over the per-thread axis with one full-size float32 result (no float64 temporary)."""
+    if buf.shape[0] == 1:
+        return buf[0]
+    out = buf[0].copy()
+    for t in range(1, buf.shape[0]):
+        np.add(out, buf[t], out=out)
+    return out
 
 
-def effective_camera(cam: Camera, framing: Framing) -> Camera:
-    """Camera with the 2-D tight-fit (if any) folded into zoom/pan."""
-    if framing.fit_zoom == 1.0 and framing.fit_pan == (0.0, 0.0):
-        return cam
-    # fit_pan is already expressed in final image fractions (it includes fit_zoom)
-    return replace(cam, zoom=cam.zoom * framing.fit_zoom,
-                   pan_u=cam.pan_u + framing.fit_pan[0],
-                   pan_v=cam.pan_v + framing.fit_pan[1])
+class _ThreadBuffers:
+    """Per-thread accumulation planes ``[T, H, W]`` (private histograms, summed at the end).
+    Planes the look does not need are 1×1×1 dummies the kernel never touches."""
 
+    def __init__(self, threads: int, buf_w: int, buf_h: int, needs) -> None:
+        self.needs = needs
+        dummy = np.zeros((1, 1, 1), dtype=np.float32)
+        shape = (threads, buf_h, buf_w)
+        self.cnt = np.zeros(shape, dtype=np.float32)
+        self.dep = np.zeros(shape, dtype=np.float32) if needs.depth else dummy
+        self.zmn = np.full(shape, np.inf, dtype=np.float32) if needs.zmin else dummy
+        self.cvb = np.zeros(shape, dtype=np.float32) if needs.color else dummy
+        self.restarts = np.zeros(threads, dtype=np.int64)
+        self.plotted = np.zeros(threads, dtype=np.float64)
 
-def escape_config(spec: AttractorSpec) -> np.ndarray:
-    """Kernel constants for escape-time systems: region box, bailout², max_iter, min_iter."""
-    r = list(spec.region) + [0.0] * (6 - len(spec.region))
-    return np.array([*r[:6], float(spec.bailout) ** 2, float(spec.max_iter), float(spec.min_iter)], dtype=np.float64)
-
-
-def downsample(buf: np.ndarray, ss: int, mode: str) -> np.ndarray:
-    if ss == 1:
-        return buf
-    H, W = buf.shape[0] // ss, buf.shape[1] // ss
-    blocks = buf[: H * ss, : W * ss].reshape(H, ss, W, ss)
-    return blocks.min(axis=(1, 3)) if mode == "min" else blocks.sum(axis=(1, 3))
+    def assemble(self, plan: RenderPlan, stats: RenderStats, complete: bool) -> RenderResult:
+        """Sum the thread slices (float32 — exact up to 2²⁴ points per pixel) and box-filter."""
+        needs, ss = self.needs, plan.ss
+        return RenderResult(
+            plan.settings, downsample(_sum_slices(self.cnt), ss, "sum"), plan.framing, stats,
+            downsample(_sum_slices(self.dep), ss, "sum") if needs.depth else None,
+            downsample(self.zmn.min(axis=0), ss, "min").astype(np.float32) if needs.zmin else None,
+            downsample(_sum_slices(self.cvb), ss, "sum") if needs.color else None,
+            complete,
+        )
 
 
 class CpuEngine(Engine):
+    """Reference engine: numba kernels, float64 state, one private histogram per thread."""
     id = "cpu"
     name = "CPU (numba)"
 
@@ -95,153 +98,123 @@ class CpuEngine(Engine):
         tracker: ProgressTracker | None = None,
         resume: Checkpoint | None = None,
     ) -> RenderResult:
+        """Accumulate ``settings`` on the CPU (see :class:`Engine.accumulate`); tiled checkpoints are refused."""
+        if resume is not None and not resume.uniform:
+            raise ValueError("this checkpoint holds complete GPU tiles; resume it with the engine that made it")
         t_start = time.perf_counter()
         q = settings.quality
-        look = settings.look
         tracker = tracker or ProgressTracker(None)
         stats = RenderStats(engine=self.id, device=self.probe().device, precision="fp64")
 
-        # ── compile ────────────────────────────────────────────────────────────
         t0 = time.perf_counter()
         cf = spec.compiled(q.integrator)
-        needs = needs_for(look)
+        plan = prepare(settings, spec, cf, stats, resume, cancel)
+        needs = plan.needs
         mod = kernel_module(cf, (int(needs.depth), int(needs.zmin), int(needs.color), int(q.splat_radius)))
         stats.compile_seconds = time.perf_counter() - t0
         tracker.update(0.0, "compiled")
 
-        params = spec.params_array(settings.param_dict)
-        dt = float(q.dt) if q.dt else spec.dt
-        substeps = max(1, int(q.substeps))
-        warmup = spec.warmup  # framing warm-up (transient discard)
-        ss = max(1, int(q.supersample))
-        W, H = int(q.width), int(q.height)
-        Ws, Hs = W * ss, H * ss
-
-        # ── framing ────────────────────────────────────────────────────────────
-        t0 = time.perf_counter()
-        framing, sample_pts = compute_framing(spec, params, dt, substeps, warmup, q.seed, settings.camera, W, H)
-        stats.framing_seconds = time.perf_counter() - t0
-        framing = apply_lock(framing, settings.camera)
-        if resume is not None and not resume.uniform:
-            raise ValueError("this checkpoint holds complete GPU tiles; resume it with the engine that made it")
-        plan = resume_plan(spec.iteration_budget(q.iterations), q.seed, resume)
-        framing = plan.framing or framing
-        cancel.check()
-        cam = effective_camera(settings.camera, framing)
-        R = cam.matrix().ravel().astype(np.float64)
-        cx, cy, focal = cam.projection_constants(Ws, Hs)
-        center = np.asarray(framing.center, dtype=np.float64)
-        inv_radius = 1.0 / framing.radius
-
-        # ── buffers & threads ──────────────────────────────────────────────────
-        T = self._thread_count(Ws, Hs, needs.buffer_count)
-        dummy = np.zeros((1, 1, 1), dtype=np.float32)
-        cnt = np.zeros((T, Hs, Ws), dtype=np.float32)
-        dep = np.zeros((T, Hs, Ws), dtype=np.float32) if needs.depth else dummy
-        zmn = np.full((T, Hs, Ws), np.inf, dtype=np.float32) if needs.zmin else dummy
-        cvb = np.zeros((T, Hs, Ws), dtype=np.float32) if needs.color else dummy
-        restarts = np.zeros(T, dtype=np.int64)
-        plotted = np.zeros(T, dtype=np.float64)
-
-        n_traj = q.trajectories or max(1024, T * 4096)
-        # trajectories start on the attractor (framing sample) → short decorrelation warm-up
-        st = seed_from_points(n_traj, plan.seed, sample_pts, framing.radius * 1e-2)
-        warmup = int(q.warmup) if q.warmup is not None else ACCUM_WARMUP
-        ic = np.asarray(spec.ic, dtype=np.float64)
-        esc = escape_config(spec)
-        kern = splat_kernel(q.splat_radius)
-        gap_fill = 1 if (q.gap_fill and spec.plots_continuous) else 0
+        threads = self._thread_count(plan.buf_width, plan.buf_height, needs.buffer_count)
+        n_traj = q.trajectories or max(1024, threads * 4096)
         stats.trajectories = n_traj
-        stats.warmup_steps = warmup
-        budget = plan.budget
-        stats.iterations_requested = spec.iteration_budget(q.iterations)
-
-        pool = ThreadPoolExecutor(max_workers=T) if T > 1 else None
-
-        def run_slice(t: int, steps: int, t0: float, plot: int) -> None:
-            lo, hi = (t * n_traj) // T, ((t + 1) * n_traj) // T
-            mod.accumulate(
-                t, lo, hi,
-                st.X, st.Y, st.Z, st.W, st.SEC, st.RS, st.PU, st.PV, st.PC, st.HAVE, st.DXp, st.DYp, st.DZp,
-                params, dt, substeps, steps, t0,
-                R, center, inv_radius, cx, cy, focal, cam.perspective, Ws, Hs,
-                kern, gap_fill, needs.color_code, plot,
-                cnt, dep, zmn, cvb, restarts, plotted, ic, spec.jitter,
-                st.SX, st.SY, st.SZ, st.EMODE, st.ECNT, st.ENREP, esc,
-            )
-
-        def run(steps: int, t0: float, plot: int) -> None:
-            if pool is None:
-                run_slice(0, steps, t0, plot)
-                return
-            futures = [pool.submit(run_slice, t, steps, t0, plot) for t in range(T)]
-            for f in futures:
-                f.result()
-
-        # ── warm-up (not plotted) ──────────────────────────────────────────────
+        run = _CpuAccumulation(mod, plan, n_traj, threads)
+        # the whole buffer is one "tile": the schedule supplies pass adaptation, soft finish and pacing
+        schedule = TileSchedule([Tile(0, 0, plan.buf_width, plan.buf_height)], plan.total_steps(n_traj), n_traj, plan.warmup_steps,
+                                min_steps=MIN_STEPS_PER_PASS, max_steps=MAX_STEPS_PER_PASS, initial_steps=INITIAL_STEPS_PER_PASS,
+                                target_pass_seconds=TARGET_PASS_SECONDS, partial_base_seconds=1.0)
         t_acc = time.perf_counter()
-        done = 0
-        while done < warmup:
-            cancel.check()
-            k = min(WARMUP_CHUNK, warmup - done)
-            run(k, float(done), 0)
-            done += k
-            tracker.update(0.05 * done / max(warmup, 1), "warming up")
-        st.reset_history()
 
-        # ── accumulation passes ────────────────────────────────────────────────
-        total_steps = math.ceil(budget / n_traj)
-        steps_done = 0
-        steps_per_pass = 8
-        passes = 0
-        last_partial = time.perf_counter()
-        while steps_done < total_steps:
-            cancel.check()
-            if cancel.finishing:
-                stats.finished_early = True
-                stats.notes.append(f"Finished early on request at {100 * steps_done / total_steps:.0f} % of the budget.")
-                break
-            k = min(steps_per_pass, total_steps - steps_done)
-            tp = time.perf_counter()
-            run(k, float(done + steps_done), 1)
-            dtp = time.perf_counter() - tp
-            steps_done += k
-            passes += 1
-            if dtp > 0:
-                steps_per_pass = int(min(max(4, k * TARGET_PASS_SECONDS / dtp), 4096))
-            frac = steps_done / total_steps
-            tracker.update(0.05 + 0.93 * frac, f"pass {passes} · {steps_done * n_traj / 1e6:.1f} M points")
-            if sink is not None and (time.perf_counter() - last_partial > 1.0 or steps_done >= total_steps):
-                last_partial = time.perf_counter()
-                stats.iterations_done = steps_done * n_traj
-                stats.accumulate_seconds = time.perf_counter() - t_acc
-                partial = self._assemble(settings, framing, stats, cnt, dep, zmn, cvb, needs, ss, complete=False)
-                sink(plan.finish(partial), frac)
+        def emit_partial(fraction: float) -> None:
+            stats.iterations_done = schedule.min_steps_done * n_traj
+            stats.accumulate_seconds = time.perf_counter() - t_acc
+            sink(plan.resume.finish(run.bufs.assemble(plan, stats, complete=False)), fraction)
 
-        if pool is not None:
-            pool.shutdown(wait=True)
+        try:
+            schedule.run(run, cancel, tracker, stats, emit_partial if sink is not None else None)
+        finally:
+            run.close()
+
         stats.accumulate_seconds = time.perf_counter() - t_acc
-        stats.iterations_done = steps_done * n_traj
-        stats.passes = passes
-        stats.restarts = int(restarts.sum())
-        stats.points_plotted = float(plotted.sum())
-        result = plan.finish(self._assemble(settings, framing, stats, cnt, dep, zmn, cvb, needs, ss, complete=True))
-        summarize(result, look.percentile)
+        stats.iterations_done = schedule.effective_total_steps * n_traj
+        stats.restarts = int(run.bufs.restarts.sum())
+        stats.points_plotted = float(run.bufs.plotted.sum())
+        result = plan.resume.finish(run.bufs.assemble(plan, stats, complete=True))
+        summarize(result, settings.look.percentile)
         stats.elapsed = time.perf_counter() - t_start
         tracker.update(1.0, "accumulated", force=True)
         return result
 
     # ── helpers ────────────────────────────────────────────────────────────────
-    def _thread_count(self, Ws: int, Hs: int, nbuf: int) -> int:
-        per_thread = Ws * Hs * 4 * nbuf
-        t = numba.get_num_threads()
-        by_mem = max(1, MEMORY_BUDGET_BYTES // max(per_thread, 1))
-        return int(max(1, min(t, by_mem)))
-
     @staticmethod
-    def _assemble(settings, framing, stats, cnt, dep, zmn, cvb, needs, ss, complete) -> RenderResult:
-        count = downsample(cnt.sum(axis=0, dtype=np.float64), ss, "sum").astype(np.float32)
-        depth = downsample(dep.sum(axis=0, dtype=np.float64), ss, "sum").astype(np.float32) if needs.depth else None
-        zmin = downsample(zmn.min(axis=0), ss, "min").astype(np.float32) if needs.zmin else None
-        cv = downsample(cvb.sum(axis=0, dtype=np.float64), ss, "sum").astype(np.float32) if needs.color else None
-        return RenderResult(settings, count, framing, stats, depth, zmin, cv, complete)
+    def _thread_count(buf_w: int, buf_h: int, planes: int) -> int:
+        """Threads such that the private histograms stay within :func:`cpu_budget`."""
+        per_thread = buf_w * buf_h * 4 * planes
+        by_mem = max(1, cpu_budget() // max(per_thread, 1))
+        return int(max(1, min(numba.get_num_threads(), by_mem)))
+
+
+class _CpuAccumulation:
+    """:class:`TileVisitor` of the CPU engine (one tile = the whole buffer): trajectories,
+    per-thread buffers and the worker pool that runs the generated ``accumulate`` kernel
+    over disjoint trajectory slices."""
+
+    def __init__(self, mod, plan: RenderPlan, n_traj: int, threads: int) -> None:
+        self.mod, self.plan, self.n_traj, self.threads = mod, plan, n_traj, threads
+        self.bufs = _ThreadBuffers(threads, plan.buf_width, plan.buf_height, plan.needs)
+        # trajectories start on the attractor (framing sample) → short decorrelation warm-up
+        self.st: TrajectoryState = seed_from_points(n_traj, plan.resume.seed, plan.sample_pts, plan.framing.radius * 1e-2)
+        self.pool = ThreadPoolExecutor(max_workers=threads) if threads > 1 else None
+        self.t_base = 0.0  # iteration index continues across warm-up and passes (t_step)
+        self.kern = splat_kernel(plan.quality.splat_radius)
+        self.rotation = plan.rotation.ravel().astype(np.float64)
+        self.center = np.asarray(plan.framing.center, dtype=np.float64)
+        self.ic = np.asarray(plan.spec.ic, dtype=np.float64)
+
+    # ── TileVisitor ────────────────────────────────────────────────────────────
+    def select(self, index: int, tile: Tile, fresh: bool) -> None:
+        """Nothing to bind: the buffers are host arrays and there is a single tile."""
+
+    def warm_up(self, index: int, steps: int) -> None:
+        """Unplotted decorrelation steps, then forget the previous points so no gap-fill
+        segment crosses the warm-up boundary."""
+        while steps > 0:
+            k = min(WARMUP_CHUNK, steps)
+            self._run(k, plot=0)
+            steps -= k
+        self.st.reset_history()
+
+    def run_pass(self, index: int, steps: int) -> None:
+        """Plot ``steps`` steps on every thread (synchronous)."""
+        self._run(steps, plot=1)
+
+    def readback(self, index: int, tile: Tile) -> None:
+        """Nothing to copy: the accumulation buffers already live on the host."""
+
+    def close(self) -> None:
+        """Shut the worker pool down."""
+        if self.pool is not None:
+            self.pool.shutdown(wait=True)
+
+    # ── kernel launches ────────────────────────────────────────────────────────
+    def _run(self, steps: int, plot: int) -> None:
+        """Advance every trajectory ``steps`` steps on all threads (``plot`` 0 = warm-up, 1 = accumulate)."""
+        if self.pool is None:
+            self._slice(0, steps, plot)
+        else:
+            for f in [self.pool.submit(self._slice, t, steps, plot) for t in range(self.threads)]:
+                f.result()
+        self.t_base += steps * self.plan.substeps  # the kernel advances t_step once per sub-step
+
+    def _slice(self, t: int, steps: int, plot: int) -> None:
+        """Run the kernel for thread ``t``'s trajectory slice."""
+        p, st, b, n = self.plan, self.st, self.bufs, self.n_traj
+        lo, hi = (t * n) // self.threads, ((t + 1) * n) // self.threads
+        self.mod.accumulate(
+            t, lo, hi,
+            st.X, st.Y, st.Z, st.W, st.SEC, st.RS, st.PU, st.PV, st.PC, st.HAVE, st.DXp, st.DYp, st.DZp,
+            p.params, p.dt, p.substeps, steps, self.t_base,
+            self.rotation, self.center, 1.0 / p.framing.radius, p.cx, p.cy, p.focal, p.camera.perspective, p.buf_width, p.buf_height,
+            self.kern, int(p.gap_fill), p.needs.color_code, plot,
+            b.cnt, b.dep, b.zmn, b.cvb, b.restarts, b.plotted, self.ic, p.spec.jitter,
+            st.SX, st.SY, st.SZ, st.EMODE, st.ECNT, st.ENREP, p.escape,
+        )

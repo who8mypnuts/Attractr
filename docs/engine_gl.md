@@ -35,8 +35,15 @@ Three GPU engines share one algorithm and the formula code generator
 
 ## Tiling
 
-Images whose accumulation buffers exceed the GPU budget (`ATTRACTR_GPU_BUDGET_MB`, default
-768 MB, supersampling included) are split into square tiles. Tiles are rendered
+Images whose accumulation buffers exceed the GPU budget are split into square tiles (at
+most 4096²). The budget is 35 % of the **free VRAM** reported by `GL_NVX_gpu_memory_info`
+/ `GL_ATI_meminfo` (clamped to 64 MB … 2 GB), 256 MB when the driver cannot be queried, a
+share of host RAM for software renderers, or `ATTRACTR_GPU_BUDGET_MB` when set; OpenCL
+uses a quarter of the device's global memory. Only the planes the look needs (count, and
+depth / nearest depth / colour when used) are allocated, as one image set sized for the
+largest tile that every tile and round reuses (edge tiles use a corner of it through
+viewport reads/writes). Allocation failures surface as a clean error that the pipeline
+turns into a CPU continuation from the last partial (see troubleshooting.md). Tiles are rendered
 **interleaved** in `INTERLEAVE_ROUNDS = 8` rounds: the per-tile trajectory state (state,
 RNG, previous point, stats — a few MB) lives on the device for the whole render, while the
 tile's accumulation images are created on each visit and restored from the host copies

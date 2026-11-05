@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
 )
 
 from attractr.core.render.engines import selector
+from attractr.gui.state.render_prefs import DEFAULT_CHECKPOINT_MINUTES, KEY_CHECKPOINT_MINUTES
 from attractr.i18n import tr
 
 
@@ -49,7 +50,7 @@ class PreferencesDialog(QDialog):
         self.ckpt.setDecimals(1)
         self.ckpt.setSuffix(tr(" min"))
         self.ckpt.setSpecialValueText(tr("off"))
-        self.ckpt.setValue(float(qs.value("render/checkpoint_minutes", 2.0)))
+        self.ckpt.setValue(float(qs.value(KEY_CHECKPOINT_MINUTES, DEFAULT_CHECKPOINT_MINUTES)))
         self.ckpt.setToolTip(tr("Long renders write a resumable checkpoint (.npz next to the output, in checkpoints/) this often"))
         self.gpu_develop = QCheckBox(tr("Develop large images (≥ 1.5 Mpixel) on the GPU when possible"))
         self.gpu_develop.setChecked(qs.value("develop/gpu", "true") in ("true", True))
@@ -75,7 +76,7 @@ class PreferencesDialog(QDialog):
         qs.setValue("preview/ppp", self.preview_ppp.value())
         qs.setValue("preview/interactive_ppp", self.interactive_ppp.value())
         qs.setValue("thumbs/max_mb", self.thumb_mb.value())
-        qs.setValue("render/checkpoint_minutes", self.ckpt.value())
+        qs.setValue(KEY_CHECKPOINT_MINUTES, self.ckpt.value())
         qs.setValue("develop/gpu", self.gpu_develop.isChecked())
         qs.setValue("ffmpeg/path", self.ffmpeg.text())
         self.accept()

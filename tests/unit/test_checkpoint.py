@@ -68,3 +68,17 @@ def test_resume_with_different_supersampling_and_splat():
     resumed = accumulate(replace(base, quality=replace(base.quality, supersample=1, splat_radius=1)), engine="cpu", resume=ck)
     assert resumed.stats.iterations_done == full.stats.iterations_done
     assert abs(resumed.count.sum() - full.count.sum()) / full.count.sum() < 0.03
+
+
+def test_checkpoint_load_rejects_damaged_files(tmp_path):
+    import pytest
+
+    bad = tmp_path / "bad.npz"
+    bad.write_bytes(b"not a zip at all")
+    with pytest.raises(ValueError):
+        Checkpoint.load(bad)
+    np.savez(tmp_path / "nometa.npz", count=np.zeros((2, 2), dtype=np.float32))
+    with pytest.raises(ValueError):
+        Checkpoint.load(tmp_path / "nometa.npz")
+    with pytest.raises(OSError):
+        Checkpoint.load(tmp_path / "missing.npz")

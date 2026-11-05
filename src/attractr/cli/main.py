@@ -34,7 +34,9 @@ def build_parser() -> argparse.ArgumentParser:
 def run(argv: list[str]) -> int:
     ap = build_parser()
     args = ap.parse_args(argv)
-    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
+    from attractr.core.io.logging_setup import setup_logging
+
+    setup_logging(logging.DEBUG if args.verbose else logging.WARNING)
     if not args.command:
         ap.print_help()
         return 0

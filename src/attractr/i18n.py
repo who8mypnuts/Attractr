@@ -26,6 +26,7 @@ _translators: list = []  # keep references alive
 
 
 def tr(text: str, disambiguation: str | None = None, n: int = -1) -> str:
+    """Translate ``text`` in the ``attractr`` context (returns it unchanged without a QApplication)."""
     try:
         from PySide6.QtCore import QCoreApplication
     except ImportError:  # pragma: no cover — core-only environments
@@ -36,6 +37,7 @@ def tr(text: str, disambiguation: str | None = None, n: int = -1) -> str:
 
 
 def available_locales() -> list[str]:
+    """Locales with a shipped ``attractr_<locale>.qm``."""
     d = resources_dir() / "i18n"
     return sorted(p.stem.removeprefix("attractr_") for p in d.glob("attractr_*.qm")) if d.is_dir() else []
 

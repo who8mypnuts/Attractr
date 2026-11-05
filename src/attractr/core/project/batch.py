@@ -21,6 +21,7 @@ BATCH_SUFFIXES = (SUFFIX, ".atr", ".png")
 
 @dataclass(frozen=True)
 class BatchItem:
+    """One renderable file and the settings derived from it."""
     path: Path
     settings: RenderSettings
 

@@ -58,13 +58,12 @@ def test_tiled_render_is_interleaved_and_uniform(monkeypatch):
     from dataclasses import replace
 
     from attractr.core.jobs.cancel import CancelToken
-    from attractr.core.render.engines import gl_engines
     from attractr.core.render.pipeline import accumulate
 
     caps = selector.probe("gl_compute")
     if not caps.available:
         pytest.skip(f"gl_compute unavailable: {caps.notes}")
-    monkeypatch.setattr(gl_engines, "TILE_BUDGET_BYTES", 256 * 256 * 4 * 8)  # → 4 tiles of 256²
+    monkeypatch.setattr(selector.get_engine("gl_compute"), "tile_budget_bytes", 256 * 256 * 4 * 8)  # → 4 tiles of 256²
     spec = registry.get("clifford")
     s = default_settings(spec, Quality(width=512, height=512, points_per_pixel=20, engine="gl_compute"))
     s = replace(s, look=replace(s.look, style="liquid"))
@@ -98,3 +97,77 @@ def test_escape_kind_gpu_matches_cpu(engine_id):
     assert abs(gpu.stats.coverage - cpu.stats.coverage) < 0.08
     assert _js_divergence(gpu.count, cpu.count) < 0.08
     assert not selector.get_engine("gl_points").supports(spec) if "gl_points" in selector.engine_ids() else True
+
+
+def test_gpu_failure_mid_render_continues_on_cpu(monkeypatch):
+    """A GPU error after some rounds must not lose the render: the pipeline continues on the
+    CPU from the last uniform partial and still delivers the full budget."""
+    from dataclasses import replace
+
+    from attractr.core.render.engines import gl_engines
+    from attractr.core.render.pipeline import accumulate
+
+    caps = selector.probe("gl_compute")
+    if not caps.available:
+        pytest.skip(f"gl_compute unavailable: {caps.notes}")
+    monkeypatch.setattr(selector.get_engine("gl_compute"), "tile_budget_bytes", 256 * 256 * 4 * 8)
+    calls = {"n": 0}
+    orig = gl_engines._TileImages.upload
+
+    def failing_upload(self, planes, tile, fresh):
+        calls["n"] += 1
+        if calls["n"] > 8:  # second round: pretend the driver died
+            raise RuntimeError("simulated GPU failure")
+        return orig(self, planes, tile, fresh)
+
+    monkeypatch.setattr(gl_engines._TileImages, "upload", failing_upload)
+    spec = registry.get("clifford")
+    s = default_settings(spec, Quality(width=512, height=512, points_per_pixel=12, engine="gl_compute"))
+    s = replace(s, look=replace(s.look, style="liquid"))
+    res = accumulate(s, engine="gl_compute")
+    assert res.stats.engine == "cpu"
+    assert any("kept from the GPU partial" in n for n in res.stats.notes), res.stats.notes
+    assert res.stats.iterations_done >= spec.iteration_budget(s.quality.iterations) * 0.99
+    assert np.isfinite(res.zmin).any() and res.count.sum() > 0
+
+
+def test_gl_allocation_failure_falls_back(monkeypatch):
+    from attractr.core.render.engines import gl_common, gl_engines
+    from attractr.core.render.pipeline import accumulate
+
+    caps = selector.probe("gl_compute")
+    if not caps.available:
+        pytest.skip(f"gl_compute unavailable: {caps.notes}")
+
+    def no_memory(ctx, size, components, dtype, what):
+        raise gl_common.GLUnavailable(f"{what}: GL_OUT_OF_MEMORY")
+
+    monkeypatch.setattr(gl_engines, "alloc_texture", no_memory)
+    spec = registry.get("lorenz")
+    s = default_settings(spec, Quality(width=128, height=128, points_per_pixel=4, engine="gl_compute"))
+    res = accumulate(s, engine="gl_compute")
+    assert res.stats.engine == "cpu" and any("GL_OUT_OF_MEMORY" in n for n in res.stats.notes)
+
+
+@pytest.mark.parametrize("engine_id", ["gl_compute", "opencl", "gl_points"])
+def test_edge_tiles_match_untiled(engine_id):
+    """Tiles that are smaller than the shared image set (right / bottom edge) must land exactly."""
+    from dataclasses import replace
+
+    caps = selector.probe(engine_id)
+    if not caps.available:
+        pytest.skip(f"{engine_id} unavailable: {caps.notes}")
+    spec = registry.get("clifford")
+    s = default_settings(spec, Quality(width=500, height=380, points_per_pixel=12, engine=engine_id))
+    s = replace(s, look=replace(s.look, style="liquid", color_source="speed"))
+    eng = selector.get_engine(engine_id)
+    ref = eng.accumulate(s, spec)
+    eng.tile_budget_bytes = 256 * 256 * 4 * 8
+    try:
+        tiled = eng.accumulate(s, spec)
+    finally:
+        eng.tile_budget_bytes = None
+    assert tiled.stats.tiles == 4
+    for rows, cols in ((slice(0, 256), slice(256, 500)), (slice(256, 380), slice(0, 256)), (slice(256, 380), slice(256, 500))):
+        assert tiled.count[rows, cols].sum() == pytest.approx(ref.count[rows, cols].sum(), rel=1e-3)
+        assert np.isfinite(tiled.zmin[rows, cols]).mean() == pytest.approx(np.isfinite(ref.zmin[rows, cols]).mean(), abs=1e-3)

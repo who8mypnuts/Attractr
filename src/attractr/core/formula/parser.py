@@ -101,6 +101,7 @@ class Parser:
         return Program(header, tuple(params), tuple(body), tuple(on_section))
 
     def parse_on_section(self) -> list[Assign]:
+        """``on_section { statement* }`` — assignments applied after a plotted section crossing."""
         start = self.expect("ident", "on_section")
         self.expect("op", "{")
         body: list[Assign] = []

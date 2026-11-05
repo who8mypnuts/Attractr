@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import time
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -16,6 +17,30 @@ from attractr.core.render.settings import RenderSettings
 
 PassSink = Callable[[RenderResult, float], None]
 SEED_SEGMENT_STRIDE = 1_000_003  # trajectory-seed offset per resumed segment
+
+
+class PartialPacer:
+    """Decides when a partial result is worth emitting: at least ``base`` seconds apart and
+    never more often than ``overhead × (cost of the last emission)``, so assembling and
+    developing a 70-Mpixel partial (seconds) cannot dominate the render."""
+
+    def __init__(self, base: float = 1.0, overhead: float = 4.0) -> None:
+        self.base = base
+        self.overhead = overhead
+        self.last = time.perf_counter()
+        self.cost = 0.0
+
+    def due(self) -> bool:
+        return time.perf_counter() - self.last >= max(self.base, self.overhead * self.cost)
+
+    def __enter__(self):
+        self._t0 = time.perf_counter()
+        return self
+
+    def __exit__(self, *exc) -> None:
+        now = time.perf_counter()
+        self.cost = now - self._t0
+        self.last = now
 
 
 @dataclass
@@ -36,6 +61,7 @@ class ResumePlan:
 
 
 def resume_plan(budget: int, seed: int, resume: Checkpoint | None) -> ResumePlan:
+    """What to accumulate given a checkpoint: remaining budget, segment seed, forced framing, tiles to skip."""
     if resume is None:
         return ResumePlan(budget, seed)
     seg_seed = (seed + SEED_SEGMENT_STRIDE * resume.segment) & 0x7FFFFFFF
@@ -46,6 +72,7 @@ def resume_plan(budget: int, seed: int, resume: Checkpoint | None) -> ResumePlan
 
 @dataclass
 class EngineCaps:
+    """What :meth:`Engine.probe` reports about an engine on this machine."""
     id: str
     name: str
     device: str = ""
@@ -58,6 +85,7 @@ class EngineCaps:
 
 
 class Engine(ABC):
+    """Interface every accumulation engine implements (see the module docstring)."""
     id: str = "base"
     name: str = "Base"
 

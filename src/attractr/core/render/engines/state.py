@@ -11,6 +11,7 @@ from attractr.core.math.rng import trajectory_seeds, xorshift32_floats
 
 @dataclass
 class TrajectoryState:
+    """Per-trajectory arrays the CPU kernel reads and writes between passes (see the fields)."""
     X: np.ndarray
     Y: np.ndarray
     Z: np.ndarray
@@ -57,6 +58,7 @@ class TrajectoryState:
         return int(self.X.shape[0])
 
     def reset_history(self) -> None:
+        """Forget the previous points (no gap-fill segment across the warm-up boundary)."""
         self.HAVE[:] = 0
 
 

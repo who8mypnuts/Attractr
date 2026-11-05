@@ -29,6 +29,7 @@ log = logging.getLogger(__name__)
 
 @dataclass
 class RenderOutput:
+    """What a finished :class:`RenderJob` produced."""
     image_path: Path
     report_paths: list[Path] = field(default_factory=list)
     result: object = None
@@ -37,6 +38,7 @@ class RenderOutput:
 
 
 class RenderJob(Job):
+    """A queued full-size render (see the module docstring)."""
     def __init__(self, settings: RenderSettings, out_dir: Path, name_template: str, fmt: str = "png",
                  bit_depth: int = 8, report_formats: list[str] | None = None, dynamics: bool = False,
                  name: str | None = None, checkpoint_every: float = 120.0, resume: Checkpoint | None = None) -> None:
@@ -53,26 +55,36 @@ class RenderJob(Job):
         self.output: RenderOutput | None = None
         self.checkpoint_file: Path | None = None
         self._checkpoint_requested = False
-        self.supports_finish = True
 
     # ── progressive controls (called from the GUI thread) ──────────────────────
     def finish_now(self) -> None:
         self.cancel_token.finish()
 
     def checkpoint_now(self) -> None:
+        """Write a checkpoint at the next partial result."""
         self._checkpoint_requested = True
 
     # ── work ───────────────────────────────────────────────────────────────────
     def run(self, cancel: CancelToken, tracker: ProgressTracker) -> RenderOutput:
+        """Accumulate → develop → save → report; returns the :class:`RenderOutput`."""
         t0 = time.perf_counter()
         s = self.settings
         spec = resolve_spec(s)
         stem = render_name(s, self.name_template)
+        from attractr.core.render.memory import estimate_host_bytes, memory_warning
+
+        log.info("render job %s: %d×%d ss%d %s, ≈ %.0f MB host memory", stem, s.quality.width, s.quality.height,
+                 s.quality.supersample, s.quality.engine, estimate_host_bytes(s) / 2**20)
+        warn = memory_warning(s)
+        if warn:
+            log.warning("%s: %s", stem, warn)
+            tracker.update(0.0, warn, force=True)
         self.checkpoint_file = checkpoint_path(self.out_dir, stem)
         segment = self.resume.segment + 1 if self.resume else 1
         last_ck = [time.perf_counter()]
 
         def sink(result, fraction):
+            """Forward partials to the panel and write periodic / requested checkpoints."""
             self.partial.emit(result)
             due = self.checkpoint_every > 0 and time.perf_counter() - last_ck[0] >= self.checkpoint_every
             if (due or self._checkpoint_requested) and not result.complete and fraction < 1.0:

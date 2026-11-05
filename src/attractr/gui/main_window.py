@@ -23,6 +23,7 @@ from attractr.core.project.files import SUFFIX
 from attractr.gui import dragdrop
 from attractr.gui.controllers.animation_controller import AnimationController
 from attractr.gui.controllers.preview_controller import PreviewController
+from attractr.gui.controllers.render_actions import RenderActions
 from attractr.gui.controllers.render_job import RenderJob
 from attractr.gui.controllers.worker_client import WorkerClient as ThumbnailWorker
 from attractr.gui.dialogs.about_dialog import AboutDialog
@@ -90,7 +91,7 @@ class MainWindow(QMainWindow):
         self.search_panel = SearchPanel(self.doc)
         self.search_panel.locked_provider = lambda: self.params_panel.locked
         self.gallery_panel = GalleryPanel(self.doc)
-        self.gallery_panel.rerenderRequested.connect(self.rerender_settings)
+        self.gallery_panel.rerenderRequested.connect(lambda lst, preset: self.render_actions.rerender(lst, preset))
         self.anim = AnimationController(self.doc, self)
         self.timeline_panel = TimelinePanel(self.doc, self.anim)
         self.timeline_panel.renderRequested.connect(self.show_animate_dialog)
@@ -139,9 +140,9 @@ class MainWindow(QMainWindow):
         self.doc.pathChanged.connect(self._update_title)
         self.doc.dirtyChanged.connect(lambda _: self._update_title())
         self.doc.attractorChanged.connect(lambda _: self._update_title())
+        self.render_actions = RenderActions(self)
         self.queue.job_ended.connect(self._on_job_ended)
-        self.queue.idle.connect(self._on_queue_idle)
-        self._jobs_since_idle: list = []
+        self.queue.idle.connect(self.render_actions.queue_idle)
         self._update_title()
         self._restore_layout()
         QTimer.singleShot(800, self.stats_panel.refresh_system_async)
@@ -196,9 +197,9 @@ class MainWindow(QMainWindow):
         a["spin"] = QAction(tr("Spin"), self, shortcut="Space", checkable=True, triggered=self.viewport.toggle_spin)
         a["hud"] = QAction(tr("Show HUD"), self, shortcut="H", checkable=True, checked=True, triggered=self._toggle_hud)
         a["render"] = QAction(tr("⬛ Render…"), self, shortcut="Ctrl+R", triggered=self.show_render_dialog)
-        a["quick_render"] = QAction(tr("Quick render (2048²)"), self, shortcut="Ctrl+Shift+R", triggered=self.quick_render)
-        a["resume_render"] = QAction(tr("Resume render from checkpoint…"), self, triggered=self.resume_render)
-        a["batch_render"] = QAction(tr("Batch render folder…"), self, triggered=self.batch_render)
+        a["quick_render"] = QAction(tr("Quick render (2048²)"), self, shortcut="Ctrl+Shift+R", triggered=lambda: self.render_actions.quick_render())
+        a["resume_render"] = QAction(tr("Resume render from checkpoint…"), self, triggered=lambda: self.render_actions.resume_render())
+        a["batch_render"] = QAction(tr("Batch render folder…"), self, triggered=lambda: self.render_actions.batch_render())
         a["timeline"] = QAction(tr("Timeline"), self, shortcut="T", triggered=lambda: (self.docks["timeline"].show(), self.docks["timeline"].raise_()))
         a["animate"] = QAction(tr("🎞 Render animation…"), self, shortcut="Ctrl+Shift+A", triggered=self.show_animate_dialog)
         a["copy_code"] = QAction(tr("Copy share code"), self, shortcut="Ctrl+Shift+C", triggered=self.presets_panel._copy_code)
@@ -412,40 +413,6 @@ class MainWindow(QMainWindow):
         self.render_dialog.show()
         self.render_dialog.raise_()
 
-    def quick_render(self) -> None:
-        from dataclasses import replace
-
-        s = self.doc.settings
-        q = replace(s.quality, width=2048, height=2048, points_per_pixel=12.0, supersample=2)
-        fmt = self.qs.value("render/report_fmt", "md")
-        reports = [fmt] if self.qs.value("render/report", "true") == "true" else []
-        out = Path(self.qs.value("render/folder", str(Path.home() / "Attractr"))).expanduser()
-        self.submit_job(RenderJob(replace(s, quality=q), out, self.qs.value("render/template", "{name}_{date}_{w}x{h}"), report_formats=reports,
-                                  checkpoint_every=60.0 * float(self.qs.value("render/checkpoint_minutes", 2.0))))
-
-    def resume_render(self) -> None:
-        """Render → Resume from checkpoint…: continue an interrupted render from its .npz checkpoint."""
-        from attractr.core.render.checkpoint import SUFFIX, Checkpoint, list_checkpoints
-
-        out = Path(self.qs.value("render/folder", str(Path.home() / "Attractr"))).expanduser()
-        existing = list_checkpoints(out)
-        start = str(existing[0]) if existing else str(out / "checkpoints")
-        path, _ = QFileDialog.getOpenFileName(self, tr("Resume render from checkpoint"), start, f"Attractr checkpoints (*{SUFFIX});;All files (*)")
-        if not path:
-            return
-        try:
-            ck = Checkpoint.load(path)
-        except Exception as exc:  # noqa: BLE001
-            QMessageBox.warning(self, tr("Resume render"), f"Could not read the checkpoint:\n{exc}")
-            return
-        fmt = self.qs.value("render/report_fmt", "md")
-        reports = [fmt] if self.qs.value("render/report", "true") == "true" else []
-        job = RenderJob(ck.next_settings(), Path(path).parent.parent, self.qs.value("render/template", "{name}_{date}_{w}x{h}"),
-                        report_formats=reports, resume=ck,
-                        checkpoint_every=60.0 * float(self.qs.value("render/checkpoint_minutes", 2.0)))
-        self._set_status(f"resuming at {ck.fraction * 100:.0f} % ({Path(path).name})")
-        self.submit_job(job)
-
     def show_animate_dialog(self) -> None:
         from attractr.gui.dialogs.animate_dialog import AnimateDialog
 
@@ -463,71 +430,8 @@ class MainWindow(QMainWindow):
         self.queue.submit(job)
         self._set_status(f"queued {job.name}")
 
-    def batch_render(self) -> None:
-        """Render → Batch render folder…: every project / .atr / tagged PNG in a folder × a render preset."""
-        from PySide6.QtWidgets import QInputDialog
-
-        from attractr.core.project import batch
-        from attractr.core.project.render_presets import render_presets
-
-        folder = QFileDialog.getExistingDirectory(self, tr("Folder with .attractr / .atr / tagged .png files"), str(Path.home()))
-        if not folder:
-            return
-        names = render_presets.names()
-        name, ok = QInputDialog.getItem(self, tr("Batch render"), tr("Render preset:"), names, 0, False)
-        if not ok:
-            return
-        preset = render_presets.get(name)
-        items, skipped = batch.plan(Path(folder), preset)
-        if not items:
-            QMessageBox.information(self, tr("Batch render"), tr("No renderable files found in that folder."))
-            return
-        out = Path(folder) / "renders"
-        every = 60.0 * float(self.qs.value("render/checkpoint_minutes", 2.0))
-        for it in items:
-            self.submit_job(RenderJob(it.settings, out, "{name}_{w}x{h}", fmt=preset.fmt, bit_depth=preset.bit_depth,
-                                      report_formats=list(preset.report_formats), dynamics=preset.dynamics,
-                                      name=f"Batch {it.path.name}", checkpoint_every=every))
-        msg = f"queued {len(items)} render(s) → {out}"
-        if skipped:
-            msg += f" · skipped {len(skipped)} file(s)"
-        self._set_status(msg)
-
-    def rerender_settings(self, settings_list, preset) -> None:
-        """Queue one render job per settings object with a render preset (Gallery → Re-render…)."""
-        out = Path(self.qs.value("render/folder", str(Path.home() / "Attractr"))).expanduser()
-        every = 60.0 * float(self.qs.value("render/checkpoint_minutes", 2.0))
-        for s in settings_list:
-            self.submit_job(RenderJob(preset.apply(s), out, self.qs.value("render/template", "{name}_{date}_{w}x{h}"),
-                                      fmt=preset.fmt, bit_depth=preset.bit_depth, report_formats=list(preset.report_formats),
-                                      dynamics=preset.dynamics, checkpoint_every=every))
-        self._set_status(f"queued {len(settings_list)} re-render(s) [{preset.name}]")
-
-    def _on_queue_idle(self) -> None:
-        """Desktop notification when a batch of jobs has finished and the window is not in front."""
-        done = [j for j in self._jobs_since_idle if j.state == "done"]
-        failed = [j for j in self._jobs_since_idle if j.state == "failed"]
-        self._jobs_since_idle = []
-        if not done and not failed:
-            return
-        if self.isActiveWindow() and len(done) + len(failed) == 1:
-            return  # the status bar already says it
-        text = f"{len(done)} render(s) finished" + (f", {len(failed)} failed" if failed else "")
-        self._notify("Attractr — queue finished", text)
-
-    def _notify(self, title: str, text: str) -> None:
-        from PySide6.QtWidgets import QSystemTrayIcon
-
-        if not QSystemTrayIcon.isSystemTrayAvailable() or QApplication.instance().property("attractr_testing"):
-            return
-        if not hasattr(self, "_tray"):
-            self._tray = QSystemTrayIcon(self.windowIcon(), self)
-            self._tray.setToolTip(APP_NAME)
-            self._tray.show()
-        self._tray.showMessage(title, text, QSystemTrayIcon.MessageIcon.Information, 6000)
-
     def _on_job_ended(self, job) -> None:
-        self._jobs_since_idle.append(job)
+        self.render_actions.job_ended(job)
         if isinstance(job, RenderJob) and job.state == "done" and job.output:
             out = job.output
             self.gallery_panel.refresh()

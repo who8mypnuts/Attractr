@@ -18,6 +18,7 @@ from attractr.core.render.settings import RenderSettings
 
 @dataclass(frozen=True)
 class RenderPreset:
+    """A named output recipe: size, quality, engine, file format and report."""
     name: str
     width: int = 2048
     height: int = 2048
@@ -40,10 +41,12 @@ class RenderPreset:
 
     @property
     def summary(self) -> str:
+        """One-line description for lists and tooltips."""
         rep = ",".join(self.report_formats) if self.report_formats else "no report"
         return f"{self.width}×{self.height} · {self.points_per_pixel:g} ppp · ss{self.supersample} · {self.fmt} {self.bit_depth}-bit · {rep}"
 
     def to_dict(self) -> dict[str, Any]:
+        """JSON-serialisable form (without the ``builtin`` flag)."""
         d = asdict(self)
         d.pop("builtin", None)
         d["report_formats"] = list(self.report_formats)
@@ -60,16 +63,19 @@ class RenderPreset:
 
 
 class RenderPresetLibrary:
+    """Built-in + user render presets (user ones persisted in ``~/.attractr/render_presets.json``)."""
     def __init__(self) -> None:
         self._items: dict[str, RenderPreset] | None = None
 
     # ── loading ────────────────────────────────────────────────────────────────
     def _ensure(self) -> dict[str, RenderPreset]:
+        """Load on first use."""
         if self._items is None:
             self.reload()
         return self._items  # type: ignore[return-value]
 
     def reload(self) -> None:
+        """(Re-)read the built-in and user preset files; unreadable files are skipped."""
         items: dict[str, RenderPreset] = {}
         for path, builtin in ((resources_dir() / "render_presets" / "builtin.json", True), (self.user_file, False)):
             if not path.exists():
@@ -91,6 +97,7 @@ class RenderPresetLibrary:
         return list(self._ensure().keys())
 
     def get(self, name: str) -> RenderPreset:
+        """The preset called ``name`` (``KeyError`` lists the available names)."""
         items = self._ensure()
         if name not in items:
             raise KeyError(f"unknown render preset {name!r}; available: {', '.join(items)}")
@@ -104,11 +111,13 @@ class RenderPresetLibrary:
 
     # ── user presets ───────────────────────────────────────────────────────────
     def save(self, preset: RenderPreset) -> None:
+        """Add or replace a user preset and persist the user file."""
         items = self._ensure()
         items[preset.name] = replace(preset, builtin=False)
         self._write_user()
 
     def delete(self, name: str) -> bool:
+        """Remove a user preset; returns False for unknown or built-in names."""
         items = self._ensure()
         p = items.get(name)
         if p is None or p.builtin:
@@ -118,6 +127,7 @@ class RenderPresetLibrary:
         return True
 
     def _write_user(self) -> None:
+        """Persist every non-built-in preset."""
         user = [p.to_dict() for p in self._ensure().values() if not p.builtin]
         self.user_file.parent.mkdir(parents=True, exist_ok=True)
         self.user_file.write_text(json.dumps({"schema": 1, "presets": user}, indent=1), encoding="utf-8")

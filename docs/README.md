@@ -26,6 +26,7 @@
 | [animation.md](animation.md) | timeline, keyframes, helpers, rendering, ffmpeg |
 | [gui_guide.md](gui_guide.md) | panels, viewport, shortcuts |
 | [checkpoints.md](checkpoints.md) | progressive renders, Finish now, checkpoint / resume |
+| [troubleshooting.md](troubleshooting.md) | logs, crash traces, memory budgets, what to do when a render dies |
 | [changelog.md](changelog.md) | release notes |
 | [suggested-improvements.md](suggested-improvements.md) | status of the two post-plan improvement rounds; what was dropped; what could come next |
 | [attractors/](attractors/README.md) | generated page per attractor |

@@ -12,6 +12,19 @@ Milestones M0–M6 of the plan:
 * Animator: timeline/keyframes/easing, helpers, locked framing, frame sequences, ffmpeg encoding.
 * Reports (Markdown/Text/HTML/PDF), statistics, Lyapunov/dimension analysis, CLI.
 
+### Large-render robustness (after an A3 render crashed at ~30 %)
+
+* GPU tile budget derived from free VRAM (NVX / ATI queries; host RAM for software renderers;
+  `ATTRACTR_GPU_BUDGET_MB` override), tiles capped at 4096², only the needed planes allocated,
+  and **one image set allocated per render** instead of per tile visit (the interleaving had
+  re-allocated up to 750 MB of textures every visit — the likely VRAM exhaustion).
+* Allocation failures are detected (`GL_OUT_OF_MEMORY`) and any mid-render GPU failure now
+  **continues on the CPU from the last partial** instead of restarting or dying.
+* Host memory: box-filtering without float64 copies, float32 thread-slice sums, cost-paced
+  partial snapshots, CPU buffers sized from available RAM, host-memory estimate + warning in the
+  render dialog and in the job log.
+* `~/.attractr/logs/attractr.log` + `crash.log` (faulthandler) for every run; `docs/troubleshooting.md`.
+
 ### Post-plan additions, second round
 
 * **Translations**: all ~275 user-visible GUI literals wrapped in `tr()` (`tools/wrap_tr.py`),

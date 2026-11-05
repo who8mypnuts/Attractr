@@ -1,26 +1,6 @@
 """Offscreen GUI smoke test: window builds, preview renders, changes propagate, undo works."""
 
-import time
-
-import pytest
-from PySide6.QtWidgets import QApplication
-
-
-@pytest.fixture(scope="module")
-def app():
-    a = QApplication.instance() or QApplication([])
-    a.setProperty("attractr_testing", True)
-    return a
-
-
-def pump(app, seconds: float, until=None):
-    t0 = time.time()
-    while time.time() - t0 < seconds:
-        app.processEvents()
-        if until is not None and until():
-            return True
-        time.sleep(0.01)
-    return until() if until else True
+from conftest import pump
 
 
 def test_main_window_preview_and_undo(app):
@@ -144,7 +124,7 @@ def test_gallery_rerender_queues_jobs(app, tmp_path):
     w = MainWindow()
     w.show()
     n = len(w.queue.pending) + len(w.queue.running)
-    w.rerender_settings([w.doc.settings, w.doc.settings], render_presets.get("Draft 1024²"))
+    w.render_actions.rerender([w.doc.settings, w.doc.settings], render_presets.get("Draft 1024²"))
     jobs = w.queue.pending + w.queue.running
     assert len(jobs) == n + 2 and all(j.settings.quality.width == 1024 for j in jobs[-2:])
     w.queue.cancel_all()

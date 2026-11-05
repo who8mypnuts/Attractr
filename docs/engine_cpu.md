@@ -18,9 +18,10 @@ The reference implementation. numba-compiled, fp64 state, multi-threaded.
    points of the framing sample (already on the attractor) plus a 1 % jitter, then run a
    short decorrelation warm-up (64 steps).
 4. **Accumulation** — each thread owns a contiguous slice of trajectories and a private set
-   of float32 buffers (`count`, optionally `depth_sum`, `zmin`, `cv_sum`). Passes of
-   adaptive length (~0.35 s) let the engine report progress, check cancellation and emit
-   partial results. Points are projected with the camera model (see camera.md) and
+   of float32 buffers (`count`, optionally `depth_sum`, `zmin`, `cv_sum`). The whole buffer
+   is driven as a single tile by the shared `TileSchedule` (see architecture.md): passes of
+   adaptive length (~0.35 s) report progress, check cancellation / *Finish now* and emit
+   paced partial results. Points are projected with the camera model (see camera.md) and
    deposited with a bilinear 2×2 splat (radius 0) or a soft-disk kernel (radius 1–4). For
    flows, consecutive points are connected by up to 64 interpolated sub-splats of weight
    1/n (“gap filling”, from the C rewrite) so fast stretches draw as continuous curves.
@@ -35,8 +36,9 @@ initial condition + jitter and counted as a *restart*. The report shows the coun
 ## Threads & memory
 
 `numba.get_num_threads()` workers, reduced so that private buffers fit the memory budget
-(`ATTRACTR_CPU_BUDGET_MB`, default 1 GB). Very large images are tiled by the precision
-path (milestone 2).
+(`ATTRACTR_CPU_BUDGET_MB`, else a quarter of the available RAM, 512 MB … 8 GB). Very
+large images are tiled by the GPU engines; on the CPU a huge buffer simply means fewer
+threads.
 
 ## Determinism
 

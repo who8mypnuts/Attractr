@@ -1,15 +1,5 @@
 """Widget-level smoke tests (offscreen)."""
 
-import pytest
-from PySide6.QtWidgets import QApplication
-
-
-@pytest.fixture(scope="module")
-def app():
-    a = QApplication.instance() or QApplication([])
-    a.setProperty("attractr_testing", True)
-    return a
-
 
 def test_gradient_editor_edits(app):
     from attractr.core.color.palettes import palettes

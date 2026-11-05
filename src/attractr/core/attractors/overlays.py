@@ -24,6 +24,7 @@ log = logging.getLogger(__name__)
 
 
 def current_locale() -> str:
+    """The locale the overlays are chosen for: ``ATTRACTR_LANG``, else the system locale, else ``en``."""
     name = os.environ.get("ATTRACTR_LANG")
     if not name:
         try:
@@ -34,6 +35,7 @@ def current_locale() -> str:
 
 
 def overlay_path(locale: str) -> Path | None:
+    """The overlay file for ``locale`` (exact, then language only) or ``None``."""
     d = resources_dir() / "i18n"
     for cand in (locale, locale.split("_")[0]):
         p = d / f"attractors_{cand}.json"
@@ -43,6 +45,7 @@ def overlay_path(locale: str) -> Path | None:
 
 
 def load_overlay(locale: str | None = None) -> dict[str, dict]:
+    """The parsed overlay mapping for the (current) locale; empty when absent or unreadable."""
     p = overlay_path(locale or current_locale())
     if p is None:
         return {}

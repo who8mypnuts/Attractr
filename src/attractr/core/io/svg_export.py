@@ -10,7 +10,7 @@ from pathlib import Path
 
 import numpy as np
 
-from attractr.core.render.engines.cpu_numba import apply_lock, effective_camera
+from attractr.core.render.engines.setup import apply_lock, effective_camera
 from attractr.core.render.framing import compute_framing, sample_attractor
 from attractr.core.render.pipeline import resolve_spec
 from attractr.core.render.settings import RenderSettings
@@ -68,6 +68,7 @@ def svg_document(uv: np.ndarray, width: int, height: int, continuous: bool, *, s
 
 
 def write_svg(settings: RenderSettings, path: str | Path, points: int = 20000, **style) -> Path:
+    """Trace ``settings`` and write the SVG to ``path``; style keywords are passed to :func:`svg_document`."""
     uv, continuous = trace(settings, points)
     q = settings.quality
     bg = settings.look.background

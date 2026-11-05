@@ -93,35 +93,10 @@ def validate(prog: Program) -> Analysis:
     if has_depth and has_plot:
         raise FormulaError("use either depth = … or plot = …, not both")
     if kind == "escape":
-        for p in prog.params:
-            if p.name in START_VARS:
-                raise FormulaError(f"{p.name!r} is the orbit start in an escape system and cannot be a parameter", p.line)
-        for a in (*all_assigns(prog.body), *prog.on_section):
-            if a.target in START_VARS:
-                raise FormulaError(f"{a.target!r} is the orbit start and cannot be assigned", a.line)
-            if a.target in SPECIAL_TARGETS and any(isinstance(v, Var) and v.name in START_VARS for v in walk(a.expr)):
-                raise FormulaError("x0 / y0 / z0 may only be used in the update statements", a.line)
-    if kind == "escape" and has_section:
-        raise FormulaError("kind: escape cannot combine with section =")
-    for key, lo in (("max_iter", 1), ("min_iter", 0)):
-        if key in prog.header:
-            try:
-                if int(float(prog.header[key])) < lo:
-                    raise ValueError
-            except ValueError:
-                raise FormulaError(f"{key} must be an integer ≥ {lo}") from None
+        _check_escape(prog, has_section)
     has_event = bool(prog.on_section)
     if has_event:
-        if not has_section:
-            raise FormulaError("on_section needs a section = … statement", prog.on_section[0].line)
-        known = set(params)
-        for a in prog.on_section:
-            if a.target in DERIV_TARGETS or a.target in SPECIAL_TARGETS:
-                raise FormulaError(f"{a.target!r} is not allowed inside on_section (assign x', y', z', w' or temporaries)", a.line)
-            if a.is_temp and (a.target in RESERVED_VARS or a.target in FUNCTIONS or a.target.endswith("'")):
-                raise FormulaError(f"{a.target!r} cannot be assigned inside on_section", a.line)
-            uses_rand |= _check_expr(a.expr, known, a.line)
-            known.add(a.target)
+        uses_rand |= _check_on_section(prog, has_section, set(params))
     if prog.header.get("section_dir", "both").strip().lower() not in ("both", "up", "down"):
         raise FormulaError("section_dir must be both, up or down")
     dims = _infer_dims(prog, kind, has_depth or has_plot)
@@ -137,6 +112,44 @@ def validate(prog: Program) -> Analysis:
         if p not in used:
             analysis.warnings.append(f"parameter {p!r} is never used")
     return analysis
+
+
+def _check_escape(prog: Program, has_section: bool) -> None:
+    """Rules of ``kind: escape``: the orbit start ``x0/y0/z0`` is read-only and only visible to
+    the update statements, no sections, sane iteration limits."""
+    for p in prog.params:
+        if p.name in START_VARS:
+            raise FormulaError(f"{p.name!r} is the orbit start in an escape system and cannot be a parameter", p.line)
+    for a in (*all_assigns(prog.body), *prog.on_section):
+        if a.target in START_VARS:
+            raise FormulaError(f"{a.target!r} is the orbit start and cannot be assigned", a.line)
+        if a.target in SPECIAL_TARGETS and any(isinstance(v, Var) and v.name in START_VARS for v in walk(a.expr)):
+            raise FormulaError("x0 / y0 / z0 may only be used in the update statements", a.line)
+    if has_section:
+        raise FormulaError("kind: escape cannot combine with section =")
+    for key, lo in (("max_iter", 1), ("min_iter", 0)):
+        if key in prog.header:
+            try:
+                if int(float(prog.header[key])) < lo:
+                    raise ValueError
+            except ValueError:
+                raise FormulaError(f"{key} must be an integer ≥ {lo}") from None
+
+
+def _check_on_section(prog: Program, has_section: bool, known: set[str]) -> bool:
+    """Rules of the ``on_section`` block (needs a section; only next-state / temporary targets).
+    Returns True when the block calls ``rand()``."""
+    if not has_section:
+        raise FormulaError("on_section needs a section = … statement", prog.on_section[0].line)
+    uses_rand = False
+    for a in prog.on_section:
+        if a.target in DERIV_TARGETS or a.target in SPECIAL_TARGETS:
+            raise FormulaError(f"{a.target!r} is not allowed inside on_section (assign x', y', z', w' or temporaries)", a.line)
+        if a.is_temp and (a.target in RESERVED_VARS or a.target in FUNCTIONS or a.target.endswith("'")):
+            raise FormulaError(f"{a.target!r} cannot be assigned inside on_section", a.line)
+        uses_rand |= _check_expr(a.expr, known, a.line)
+        known.add(a.target)
+    return uses_rand
 
 
 def _check_param_names(prog: Program) -> None:

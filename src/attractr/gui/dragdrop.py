@@ -32,6 +32,7 @@ FILE_SUFFIXES = (".atr", ".attractr", ".png", ".ggr", ".json")
 
 
 def palette_mime(pid: str) -> QMimeData:
+    """Drag payload for a palette id."""
     m = QMimeData()
     m.setData(MIME_PALETTE, pid.encode())
     m.setText(pid)
@@ -39,6 +40,7 @@ def palette_mime(pid: str) -> QMimeData:
 
 
 def gallery_mime(path: str) -> QMimeData:
+    """Drag payload for a gallery image (internal type + file URL for other apps)."""
     m = QMimeData()
     m.setData(MIME_GALLERY, str(path).encode())
     m.setUrls([QUrl.fromLocalFile(str(path))])
@@ -50,6 +52,7 @@ def _local_files(mime: QMimeData) -> list[Path]:
 
 
 def can_accept(mime: QMimeData) -> bool:
+    """Whether :func:`handle_drop` knows what to do with ``mime``."""
     if mime.hasFormat(MIME_PALETTE) or mime.hasFormat(MIME_GALLERY):
         return True
     if any(p.suffix.lower() in FILE_SUFFIXES for p in _local_files(mime)):
@@ -88,6 +91,7 @@ def handle_drop(window, mime: QMimeData) -> bool:
 
 
 def _handle_file(window, path: Path) -> bool:
+    """Dispatch a dropped local file by suffix; errors go to the status bar."""
     suffix = path.suffix.lower()
     try:
         if suffix == ".attractr":
@@ -107,6 +111,7 @@ def _handle_file(window, path: Path) -> bool:
 
 
 def _import_attractor(window, path: Path) -> bool:
+    """Save an ``.atr`` file into *My attractors* and select it."""
     from attractr.core.attractors.registry import registry
 
     spec = registry.save_user(path.read_text(encoding="utf-8"), spec_id=path.stem)
@@ -118,6 +123,7 @@ def _import_attractor(window, path: Path) -> bool:
 
 
 def _apply_image_settings(window, path: Path) -> bool:
+    """Re-open the settings embedded in an Attractr PNG."""
     from attractr.core.io.metadata import read_settings
     from attractr.gui.state.document import TAGS_ALL
 
@@ -131,6 +137,7 @@ def _apply_image_settings(window, path: Path) -> bool:
 
 
 def _apply_gradient_file(window, path: Path) -> bool:
+    """Apply a ``.ggr`` / gradient ``.json`` file to the look."""
     from attractr.core.color.gradient import Gradient
 
     if path.suffix.lower() == ".ggr":

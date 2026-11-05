@@ -10,6 +10,7 @@ from attractr.core.render.result import RenderResult
 
 
 def _block(buf: np.ndarray, f: int, mode: str) -> np.ndarray:
+    """Box-reduce a plane by an integer factor (sum or min)."""
     H, W = buf.shape[0] // f, buf.shape[1] // f
     blocks = buf[: H * f, : W * f].reshape(H, f, W, f)
     out = blocks.min(axis=(1, 3)) if mode == "min" else blocks.sum(axis=(1, 3), dtype=np.float64)

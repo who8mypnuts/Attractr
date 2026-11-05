@@ -13,7 +13,9 @@ def run_gui(argv: list[str]) -> int:
     from PySide6.QtCore import QCoreApplication, Qt
     from PySide6.QtWidgets import QApplication
 
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    from attractr.core.io.logging_setup import setup_logging
+
+    setup_logging(logging.INFO)
     QCoreApplication.setOrganizationName(ORG_NAME)
     QCoreApplication.setApplicationName(APP_NAME)
     QApplication.setAttribute(Qt.ApplicationAttribute.AA_DontCreateNativeWidgetSiblings, True)

@@ -7,34 +7,37 @@ from __future__ import annotations
 import logging
 import math
 import os
-import time
+from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 
 from attractr.core.attractors.spec import AttractorSpec
 from attractr.core.formula.codegen_glsl import generate_gpu_source
-from attractr.core.jobs.cancel import NEVER, CancelToken
 from attractr.core.jobs.progress import ProgressTracker
-from attractr.core.render.accumulators import color_value_range, needs_for
-from attractr.core.render.checkpoint import Checkpoint
 from attractr.core.render.engines import selector
-from attractr.core.render.engines.base import Engine, EngineCaps, PassSink, resume_plan
-from attractr.core.render.engines.cpu_numba import apply_lock, downsample, effective_camera, escape_config, splat_kernel
-from attractr.core.render.engines.gl_common import read_shader
+from attractr.core.render.engines.base import EngineCaps
+from attractr.core.render.engines.gl_common import (
+    DEFAULT_GPU_BUDGET,
+    MAX_GPU_BUDGET,
+    MIN_GPU_BUDGET,
+    host_memory_budget,
+    read_shader,
+)
+from attractr.core.render.engines.gpu_base import DeviceSession, PassTuning, TiledGpuEngine
+from attractr.core.render.engines.setup import RenderPlan, padded_splat_kernel
 from attractr.core.render.engines.state import seed_from_points
-from attractr.core.render.framing import compute_framing
-from attractr.core.render.result import RenderResult, RenderStats
+from attractr.core.render.engines.tiling import MAX_TILE_SIDE, PLANE_FILL, PLANE_NAMES, HostPlanes, Tile
+from attractr.core.render.result import RenderStats
 from attractr.core.render.settings import RenderSettings
-from attractr.core.render.stats import summarize
 
 log = logging.getLogger(__name__)
 
+LOCAL_SIZE = 128
+DEFAULT_TRAJECTORIES = 65536
 MAX_STEPS_PER_PASS = 256
 TARGET_PASS_SECONDS = 0.3
-TILE_BUDGET_BYTES = int(float(os.environ.get("ATTRACTR_GPU_BUDGET_MB", "768")) * 1024 * 1024)
-ACCUM_WARMUP = 64
-INTERLEAVE_ROUNDS = 8  # tiled renders visit every tile this many times so progress stays uniform
-MIN_FINISH_STEPS = 16
+DEVICE_MEMORY_FRACTION = 0.25  # of the device's global memory one render may use for tile buffers
 
 PARAMS_DTYPE = np.dtype([
     ("steps", "i4"), ("substeps", "i4"), ("splat_r", "i4"), ("gap_fill", "i4"), ("color_code", "i4"),
@@ -48,6 +51,7 @@ PARAMS_DTYPE = np.dtype([
 
 
 def _pick_device():
+    """The most capable device: GPUs before CPUs, then the most compute units."""
     import pyopencl as cl
 
     best = None
@@ -61,9 +65,11 @@ def _pick_device():
     return best[1]
 
 
-class OpenCLEngine(Engine):
+class OpenCLEngine(TiledGpuEngine):
+    """OpenCL engine (``opencl``); see the module docstring."""
     id = "opencl"
     name = "OpenCL"
+    tuning = PassTuning(max_steps=MAX_STEPS_PER_PASS, target_seconds=TARGET_PASS_SECONDS)
 
     def __init__(self) -> None:
         self._ctx = None
@@ -74,6 +80,7 @@ class OpenCLEngine(Engine):
         self._kernel_src = read_shader("iterate.cl")
 
     def _ensure(self):
+        """The (lazily created) context and command queue."""
         if self._ctx is None:
             import pyopencl as cl
 
@@ -83,6 +90,7 @@ class OpenCLEngine(Engine):
         return self._ctx, self._queue
 
     def probe(self) -> EngineCaps:
+        """Pick a device and build a trivial kernel; never raises."""
         try:
             import pyopencl as cl  # noqa: F401
 
@@ -97,6 +105,7 @@ class OpenCLEngine(Engine):
             return EngineCaps(self.id, self.name, available=False, notes=[f"OpenCL unavailable: {exc}"])
 
     def _program(self, cf, integrator: str, fp64: bool = False):
+        """Build (and cache) the iterate / merge kernels for ``cf`` at the given precision."""
         import pyopencl as cl
 
         key = f"{cf.source_hash}:{integrator}:{int(fp64)}"
@@ -120,270 +129,225 @@ class OpenCLEngine(Engine):
         self._programs[key] = kernels
         return kernels
 
-    # ── accumulate ─────────────────────────────────────────────────────────────
-    def accumulate(self, settings: RenderSettings, spec: AttractorSpec, *, sink: PassSink | None = None,
-                   cancel: CancelToken = NEVER, tracker: ProgressTracker | None = None,
-                   resume: Checkpoint | None = None) -> RenderResult:
-        import pyopencl as cl
-
-        t_start = time.perf_counter()
-        tracker = tracker or ProgressTracker(None)
-        q, look = settings.quality, settings.look
+    # ── TiledGpuEngine hooks ───────────────────────────────────────────────────
+    def _open(self, settings: RenderSettings, spec: AttractorSpec, tracker: ProgressTracker) -> DeviceSession:
+        """Context, queue and compiled kernels for ``spec`` at the requested precision."""
+        q = settings.quality
         ctx, queue = self._ensure()
         fp64 = q.precision == "fp64" and "cl_khr_fp64" in self._device.extensions
         if q.precision == "fp64" and not fp64:
             log.warning("fp64 requested but the OpenCL device lacks cl_khr_fp64; using fp32")
         stats = RenderStats(engine=self.id, device=self._device.name.strip(), precision="fp64" if fp64 else "fp32")
-
-        t0 = time.perf_counter()
         cf = spec.compiled(q.integrator)
-        k_iterate, k_merge = self._program(cf, q.integrator, fp64)
-        stats.compile_seconds = time.perf_counter() - t0
+        kernels = self._program(cf, q.integrator, fp64)
+        tracker.update(0.0, "kernels ready")
+        return DeviceSession(stats, _CLDevice(ctx, queue, kernels, fp64), MAX_TILE_SIDE)
 
-        params = spec.params_array(settings.param_dict)
-        dt = float(q.dt) if q.dt else spec.dt
-        substeps = max(1, int(q.substeps))
-        ss = max(1, int(q.supersample))
-        W, H = int(q.width), int(q.height)
-        Ws, Hs = W * ss, H * ss
-        t0 = time.perf_counter()
-        framing, sample_pts = compute_framing(spec, params, dt, substeps, spec.warmup, q.seed, settings.camera, W, H)
-        stats.framing_seconds = time.perf_counter() - t0
-        framing = apply_lock(framing, settings.camera)
-        plan = resume_plan(spec.iteration_budget(q.iterations), q.seed, resume)
-        framing = plan.framing or framing
-        cancel.check()
-        cam = effective_camera(settings.camera, framing)
-        R = cam.matrix().astype(np.float32).ravel()
-        cx, cy, focal = cam.projection_constants(Ws, Hs)
-        needs = needs_for(look)
+    def _trajectory_count(self, settings: RenderSettings) -> int:
+        return int(math.ceil((settings.quality.trajectories or DEFAULT_TRAJECTORIES) / LOCAL_SIZE) * LOCAL_SIZE)
 
-        n_traj = q.trajectories or 65536
-        n_traj = int(math.ceil(n_traj / 128) * 128)
-        stats.trajectories = n_traj
-        budget = plan.budget
-        stats.iterations_requested = spec.iteration_budget(q.iterations)
-        stats.warmup_steps = int(q.warmup) if q.warmup is not None else ACCUM_WARMUP
+    def _budget_bytes(self) -> int:
+        """The env override, else a fraction of the device's global memory (free memory is not
+        queryable in OpenCL); CPU devices use the host budget."""
+        override = os.environ.get("ATTRACTR_GPU_BUDGET_MB")
+        if override:
+            try:
+                return int(float(override) * 1024 * 1024)
+            except ValueError:
+                pass
+        dev = self._device
+        if dev is None:
+            return DEFAULT_GPU_BUDGET
+        if dev.type & _cl_device_type_cpu():
+            return host_memory_budget()
+        return int(min(max(int(dev.global_mem_size) * DEVICE_MEMORY_FRACTION, MIN_GPU_BUDGET), MAX_GPU_BUDGET))
 
-        tile = self._tile_size(Ws, Hs, needs.buffer_count)
-        tiles = [(tx, ty, min(tile, Ws - tx), min(tile, Hs - ty)) for ty in range(0, Hs, tile) for tx in range(0, Ws, tile)]
-        stats.tiles = len(tiles)
-        if resume is not None and not resume.uniform and resume.tiles != len(tiles):
-            raise ValueError(f"checkpoint has {resume.tiles} tiles but this device would use {len(tiles)}; resume on the same engine/device")
-        count_full = np.zeros((Hs, Ws), dtype=np.float32)
-        depth_full = np.zeros((Hs, Ws), dtype=np.float32) if needs.depth else None
-        zmin_full = np.full((Hs, Ws), np.inf, dtype=np.float32) if needs.zmin else None
-        cv_full = np.zeros((Hs, Ws), dtype=np.float32) if needs.color else None
+    def _bytes_per_pixel(self, plan: RenderPlan) -> int:
+        return 4 * 2 * plan.needs.buffer_count  # a uint pass buffer and a float accumulator per plane
 
+    def _visitor(self, session: DeviceSession, plan: RenderPlan, planes: HostPlanes, n_traj: int,
+                 active: list[int], tile_size: tuple[int, int]) -> _CLTileVisitor:
+        return _CLTileVisitor(session.device, plan, planes, n_traj, active, tile_size)
+
+
+@dataclass
+class _CLDevice:
+    """Per-render device handle: context, command queue, (iterate, merge) kernels, precision."""
+
+    ctx: Any
+    queue: Any
+    kernels: tuple
+    fp64: bool
+
+
+def _cl_device_type_cpu() -> int:
+    """``cl.device_type.CPU`` (imported lazily so the module loads without pyopencl)."""
+    import pyopencl as cl
+
+    return cl.device_type.CPU
+
+
+def _kernel_params(plan: RenderPlan, n_traj: int) -> np.ndarray:
+    """The ``Params`` struct the kernels read (per-tile and per-pass fields are filled later)."""
+    cv_lo, cv_hi = plan.cv_range
+    P = np.zeros(1, dtype=PARAMS_DTYPE)
+    P["substeps"] = plan.substeps
+    P["splat_r"] = int(plan.quality.splat_radius)
+    P["gap_fill"] = int(plan.gap_fill)
+    P["color_code"] = plan.needs.color_code
+    P["want_depth"], P["want_zmin"], P["want_color"] = int(plan.needs.depth), int(plan.needs.zmin), int(plan.needs.color)
+    P["n"] = n_traj
+    P["dt"] = plan.dt
+    P["inv_radius"] = 1.0 / plan.framing.radius
+    P["focal"] = plan.focal
+    P["persp"] = plan.camera.perspective
+    P["jitter"] = plan.spec.jitter
+    P["inv_n"] = 1.0 / n_traj
+    P["cv_lo"], P["cv_inv_range"] = cv_lo, 1.0 / (cv_hi - cv_lo)
+    P["R"] = plan.rotation.astype(np.float32).ravel()
+    P["center"] = np.asarray(plan.framing.center, dtype=np.float32)
+    P["ic"] = np.asarray(plan.spec.ic, dtype=np.float32)
+    P["esc_lo"], P["esc_hi"], P["esc_cfg"] = plan.escape[0:6:2], plan.escape[1:6:2], plan.escape[6:9]
+    return P
+
+
+class _CLTileVisitor:
+    """:class:`TileVisitor` for OpenCL: per-tile trajectory buffers, one shared set of pass /
+    accumulator buffers sized for the largest tile (``pyopencl.MemoryError`` → CPU fallback)."""
+
+    PLANE_BUFFERS = ("count", "depth", "zmin", "cv")
+
+    def __init__(self, device: _CLDevice, plan: RenderPlan, planes: HostPlanes, n_traj: int, active: list[int],
+                 tile_size: tuple[int, int]) -> None:
+        import pyopencl as cl
+
+        self.cl, self.ctx, self.queue = cl, device.ctx, device.queue
+        self.k_iterate, self.k_merge = device.kernels
+        self.plan, self.planes, self.n_traj, self.fp64 = plan, planes, n_traj, device.fp64
+        self.npix_max = tile_size[0] * tile_size[1]
+        self.P = _kernel_params(plan, n_traj)
         mf = cl.mem_flags
-        kern = np.zeros(81, dtype=np.float32)
-        kk = splat_kernel(q.splat_radius).astype(np.float32)
-        kern[: kk.size] = kk
-        b_kern = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=kern)
-        pbuf = np.zeros(max(1, params.size), dtype=np.float32)
-        pbuf[: params.size] = params
-        b_p = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=pbuf)
+        pbuf = np.zeros(max(1, plan.params.size), dtype=np.float32)
+        pbuf[: plan.params.size] = plan.params
+        self.b_kern = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=padded_splat_kernel(plan.quality.splat_radius))
+        self.b_p = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=pbuf)
+        self.b_P = cl.Buffer(self.ctx, mf.READ_ONLY, size=self.P.nbytes)
+        self.pass_bufs: list | None = None  # uint pass buffers, one per plane (placeholders when unused)
+        self.acc_bufs: list | None = None  # float accumulators, same order
+        self.state: dict[int, dict] = {}
+        self._current: tuple[int, Tile] | None = None
+        self._create_tile_state(active)
 
-        P = np.zeros(1, dtype=PARAMS_DTYPE)
-        P["substeps"] = substeps
-        P["splat_r"] = int(q.splat_radius)
-        P["gap_fill"] = 1 if (q.gap_fill and spec.plots_continuous) else 0
-        P["color_code"] = needs.color_code
-        P["want_depth"], P["want_zmin"], P["want_color"] = int(needs.depth), int(needs.zmin), int(needs.color)
-        P["n"] = n_traj
-        P["dt"] = dt
-        P["inv_radius"] = 1.0 / framing.radius
-        P["focal"] = focal
-        P["persp"] = cam.perspective
-        P["jitter"] = spec.jitter
-        P["inv_n"] = 1.0 / n_traj
-        cv_lo, cv_hi = color_value_range(needs.color_code, sample_pts, framing, cam.matrix(), params, cf.color_fn) if needs.color else (-4.0, 4.0)
-        P["cv_lo"], P["cv_inv_range"] = cv_lo, 1.0 / (cv_hi - cv_lo)
-        P["R"] = R
-        P["center"] = np.asarray(framing.center, dtype=np.float32)
-        P["ic"] = np.asarray(spec.ic, dtype=np.float32)
-        esc_cfg = escape_config(spec)
-        P["esc_lo"], P["esc_hi"], P["esc_cfg"] = esc_cfg[0:6:2], esc_cfg[1:6:2], esc_cfg[6:9]
-
-        total_steps = math.ceil(budget / n_traj)
-        done_all = 0
-        passes = 0
-        restarts_total = 0
-        plotted_total = 0.0
-        steps_per_pass = 16
-        t_acc = time.perf_counter()
-        last_partial = time.perf_counter()
-        active = [ti for ti in range(len(tiles)) if ti >= plan.skip_tiles]
-        steps_all = max(1, total_steps * len(active))
-        rounds = 1 if len(active) <= 1 else INTERLEAVE_ROUNDS
-        finish_at: int | None = None
-        zeros4 = np.zeros((n_traj, 4), dtype=np.float32)
-
-        # per-tile trajectory state persists across rounds; the big accumulators are re-created per visit
-        tile_state: dict[int, dict] = {}
-        for ti in active:
-            st = seed_from_points(n_traj, plan.seed, sample_pts, framing.radius * 1e-2)
-            state = np.zeros((n_traj, 4), dtype=np.float64 if fp64 else np.float32)
+    def _create_tile_state(self, indices: list[int]) -> None:
+        """Seed each active tile's trajectories into device buffers."""
+        cl, mf, plan, n = self.cl, self.cl.mem_flags, self.plan, self.n_traj
+        zeros4 = np.zeros((n, 4), dtype=np.float32)
+        for index in indices:
+            st = seed_from_points(n, plan.resume.seed, plan.sample_pts, plan.framing.radius * 1e-2)
+            state = np.zeros((n, 4), dtype=np.float64 if self.fp64 else np.float32)
             state[:, 0], state[:, 1], state[:, 2], state[:, 3] = st.X, st.Y, st.Z, st.W
-            tile_state[ti] = {
-                "state": cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=state),
-                "rng": cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=st.RS.astype(np.uint32)),
-                "prev": cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=zeros4),
-                "prevd": cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=zeros4),
-                "stats": cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=np.zeros(4, dtype=np.uint32)),
-                "esc": cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=st.escape_state()),
-                "t_base": 0.0, "steps_done": 0, "warmed": False,
+            self.state[index] = {
+                "state": cl.Buffer(self.ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=state),
+                "rng": cl.Buffer(self.ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=st.RS.astype(np.uint32)),
+                "prev": cl.Buffer(self.ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=zeros4),
+                "prevd": cl.Buffer(self.ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=zeros4),
+                "stats": cl.Buffer(self.ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=np.zeros(4, dtype=np.uint32)),
+                "esc": cl.Buffer(self.ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=st.escape_state()),
+                "t_base": 0.0,
             }
 
-        def emit_partial(frac: float) -> None:
-            nonlocal last_partial
-            last_partial = time.perf_counter()
-            stats.iterations_done = min(t["steps_done"] for t in tile_state.values()) * n_traj if tile_state else 0
-            stats.accumulate_seconds = time.perf_counter() - t_acc
-            sink(plan.finish(self._assemble(settings, framing, stats, count_full, depth_full, zmin_full, cv_full, ss, False)), frac)
-
+    def _make_plane_buffers(self) -> None:
+        """Pass (uint) + accumulator (float) buffers for the largest tile; unneeded planes are
+        16-byte placeholders."""
+        cl, mf = self.cl, self.cl.mem_flags
+        wanted = [True, bool(self.plan.needs.depth), bool(self.plan.needs.zmin), bool(self.plan.needs.color)]
+        made: list = []
         try:
-            for rnd in range(rounds):
-                round_target = math.ceil(total_steps * (rnd + 1) / rounds)
-                for ti in active:
-                    tx, ty, tw, th = tiles[ti]
-                    ts = tile_state[ti]
-                    if finish_at is not None:
-                        round_target = min(round_target, finish_at)
-                    if ts["steps_done"] >= round_target and ts["warmed"]:
-                        continue
-                    cancel.check()
-                    npix = tw * th
-                    u_zero = np.zeros(npix, dtype=np.uint32)
-                    u_inf = np.full(npix, 0xFFFFFFFF, dtype=np.uint32)
+            for idx, want in enumerate(wanted):
+                n = self.npix_max if want else 4
+                made.append(cl.Buffer(self.ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=np.full(n, 0xFFFFFFFF if idx == 2 else 0, dtype=np.uint32)))
+            for idx, want in enumerate(wanted):
+                n = self.npix_max if want else 4
+                made.append(cl.Buffer(self.ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=np.full(n, PLANE_FILL[PLANE_NAMES[idx]], dtype=np.float32)))
+        except Exception:
+            for b in made:
+                b.release()
+            raise
+        self.pass_bufs, self.acc_bufs = made[:4], made[4:]
 
-                    def slab(src, fill):
-                        if src is None or rnd == 0:
-                            return np.full(npix, fill, dtype=np.float32)
-                        return np.ascontiguousarray(src[ty : ty + th, tx : tx + tw], dtype=np.float32).ravel()
+    # ── TileVisitor ────────────────────────────────────────────────────────────
+    def select(self, index: int, tile: Tile, fresh: bool) -> None:
+        """Restore the tile's accumulators into the shared buffers and set the tile parameters."""
+        if self.acc_bufs is None:
+            self._make_plane_buffers()
+        for name, _ in self.planes.planes():  # restore the accumulators (pass buffers are zeroed by merge)
+            self.cl.enqueue_copy(self.queue, self.acc_bufs[PLANE_NAMES.index(name)], self.planes.slab(name, tile, fresh).ravel())
+        self.P["w"], self.P["h"] = tile.w, tile.h
+        self.P["cx"], self.P["cy"] = self.plan.cx - tile.x, self.plan.cy - tile.y
+        self._current = (index, tile)
 
-                    b_cnt = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=u_zero)
-                    b_dep = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=u_zero)
-                    b_zmn = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=u_inf)
-                    b_cvb = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=u_zero)
-                    a_cnt = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=slab(count_full, 0.0))
-                    a_dep = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=slab(depth_full, 0.0))
-                    a_zmn = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=slab(zmin_full, np.inf))
-                    a_cv = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=slab(cv_full, 0.0))
-                    P["w"], P["h"] = tw, th
-                    P["cx"], P["cy"] = cx - tx, cy - ty
-                    b_P = cl.Buffer(ctx, mf.READ_ONLY, size=P.nbytes)
-                    b_state, b_rng, b_prev, b_prevd, b_stats = (ts[k] for k in ("state", "rng", "prev", "prevd", "stats"))
+    def warm_up(self, index: int, steps: int) -> None:
+        """Unplotted steps (in kernel-sized chunks), then forget the previous points."""
+        while steps > 0:
+            k = min(steps, MAX_STEPS_PER_PASS)
+            self._dispatch(index, k, plot=0)
+            steps -= k
+        self.cl.enqueue_copy(self.queue, self.state[index]["prev"], np.zeros((self.n_traj, 4), dtype=np.float32))
 
-                    def dispatch(steps: int, plot: int, ts=ts, b_P=b_P, bufs=(b_state, b_rng, b_prev, b_prevd, b_stats, b_cnt, b_dep, b_zmn, b_cvb)) -> None:
-                        P["steps"], P["do_plot"], P["t0"] = steps, plot, ts["t_base"]
-                        ts["t_base"] += steps * substeps
-                        cl.enqueue_copy(queue, b_P, P)
-                        k_iterate(queue, (n_traj,), (128,), *bufs, b_P, b_kern, b_p, ts["esc"])
+    def run_pass(self, index: int, steps: int) -> None:
+        """Plot ``steps`` steps, merge the pass buffers into the accumulators, wait."""
+        self._dispatch(index, steps, plot=1)
+        self._merge()
+        self.queue.finish()
 
-                    def merge(npix=npix, bufs=(b_cnt, b_dep, b_zmn, b_cvb, a_cnt, a_dep, a_zmn, a_cv)) -> None:
-                        gsz = int(math.ceil(npix / 256) * 256)
-                        k_merge(queue, (gsz,), (256,), *bufs,
-                                np.int32(npix), np.int32(needs.depth), np.int32(needs.zmin), np.int32(needs.color),
-                                np.float32(cv_lo), np.float32(cv_hi - cv_lo))
+    def readback(self, index: int, tile: Tile) -> None:
+        """Copy the tile's accumulators into the host planes."""
+        self.queue.finish()
+        for name, _ in self.planes.planes():
+            out = np.empty(tile.pixels, dtype=np.float32)
+            self.cl.enqueue_copy(self.queue, out, self.acc_bufs[PLANE_NAMES.index(name)])
+            self.planes.store(name, tile, out)
 
-                    def readback(npix=npix, tx=tx, ty=ty, tw=tw, th=th, bufs=(a_cnt, a_dep, a_zmn, a_cv)) -> None:
-                        def rd(buf):
-                            out = np.empty(npix, dtype=np.float32)
-                            cl.enqueue_copy(queue, out, buf)
-                            return out.reshape(th, tw)
+    # ── internals ──────────────────────────────────────────────────────────────
+    def _dispatch(self, index: int, steps: int, plot: int) -> None:
+        """One iterate-kernel launch of ``steps`` steps for the tile's trajectories."""
+        ts = self.state[index]
+        self.P["steps"], self.P["do_plot"], self.P["t0"] = steps, plot, ts["t_base"]
+        ts["t_base"] += steps * self.plan.substeps
+        self.cl.enqueue_copy(self.queue, self.b_P, self.P)
+        self.k_iterate(self.queue, (self.n_traj,), (LOCAL_SIZE,), ts["state"], ts["rng"], ts["prev"], ts["prevd"], ts["stats"],
+                       *self.pass_bufs, self.b_P, self.b_kern, self.b_p, ts["esc"])
 
-                        queue.finish()
-                        count_full[ty : ty + th, tx : tx + tw] = rd(bufs[0])
-                        if depth_full is not None:
-                            depth_full[ty : ty + th, tx : tx + tw] = rd(bufs[1])
-                        if zmin_full is not None:
-                            zmin_full[ty : ty + th, tx : tx + tw] = rd(bufs[2])
-                        if cv_full is not None:
-                            cv_full[ty : ty + th, tx : tx + tw] = rd(bufs[3])
+    def _merge(self) -> None:
+        """Add the fixed-point pass buffers into the float accumulators and clear them."""
+        assert self._current is not None
+        _, tile = self._current
+        needs, cv_lo, cv_hi = self.plan.needs, *self.plan.cv_range
+        gsz = int(math.ceil(tile.pixels / 256) * 256)
+        self.k_merge(self.queue, (gsz,), (256,), *self.pass_bufs, *self.acc_bufs,
+                     np.int32(tile.pixels), np.int32(needs.depth), np.int32(needs.zmin), np.int32(needs.color),
+                     np.float32(cv_lo), np.float32(cv_hi - cv_lo))
 
-                    try:
-                        if not ts["warmed"]:
-                            warm = stats.warmup_steps
-                            while warm > 0:
-                                k = min(warm, MAX_STEPS_PER_PASS)
-                                dispatch(k, 0)
-                                warm -= k
-                            cl.enqueue_copy(queue, b_prev, zeros4)
-                            ts["warmed"] = True
-                        while ts["steps_done"] < round_target:
-                            cancel.check()
-                            if cancel.finishing and finish_at is None:  # soft stop: every tile ends at this count
-                                finish_at = max(ts["steps_done"], min(total_steps, MIN_FINISH_STEPS))
-                                round_target = min(round_target, finish_at)
-                                stats.finished_early = True
-                                stats.notes.append(f"Finished early on request at {100 * finish_at / total_steps:.0f} % of the budget.")
-                                if ts["steps_done"] >= round_target:
-                                    break
-                            k = min(steps_per_pass, round_target - ts["steps_done"], MAX_STEPS_PER_PASS)
-                            tp = time.perf_counter()
-                            dispatch(k, 1)
-                            merge()
-                            queue.finish()
-                            dtp = time.perf_counter() - tp
-                            ts["steps_done"] += k
-                            done_all += k
-                            passes += 1
-                            if dtp > 0:
-                                steps_per_pass = int(min(max(4, k * TARGET_PASS_SECONDS / dtp), MAX_STEPS_PER_PASS))
-                            frac = done_all / steps_all
-                            tracker.update(0.05 + 0.9 * frac, f"tile {ti + 1}/{len(tiles)} · round {rnd + 1}/{rounds} · pass {passes} · {done_all * n_traj / 1e6:.1f} M points")
-                            if sink is not None and len(active) == 1 and (time.perf_counter() - last_partial > 0.5 or ts["steps_done"] >= total_steps):
-                                readback()
-                                emit_partial(frac)
-                        readback()
-                    finally:
-                        for b in (b_cnt, b_dep, b_zmn, b_cvb, a_cnt, a_dep, a_zmn, a_cv, b_P):
-                            b.release()
-                if sink is not None and len(active) > 1:
-                    emit_partial(done_all / steps_all)
-                if finish_at is not None and all(t["steps_done"] >= finish_at for t in tile_state.values()):
-                    break
-            for ts in tile_state.values():
-                sv = np.zeros(4, dtype=np.uint32)
-                cl.enqueue_copy(queue, sv, ts["stats"])
-                queue.finish()
-                restarts_total += int(sv[0])
-                plotted_total += (int(sv[2]) * 4294967296.0 + int(sv[1])) / 16.0
-        finally:
-            for ts in tile_state.values():
-                for key in ("state", "rng", "prev", "prevd", "stats", "esc"):
-                    ts[key].release()
-            b_kern.release()
-            b_p.release()
-        if finish_at is not None:
-            total_steps = finish_at
+    def collect_stats(self) -> tuple[int, float]:
+        """(restarts, plotted weight) summed over the tiles' device counters."""
+        restarts, plotted = 0, 0.0
+        for ts in self.state.values():
+            sv = np.zeros(4, dtype=np.uint32)
+            self.cl.enqueue_copy(self.queue, sv, ts["stats"])
+            self.queue.finish()
+            restarts += int(sv[0])
+            plotted += (int(sv[2]) * 4294967296.0 + int(sv[1])) / 16.0
+        return restarts, plotted
 
-        stats.accumulate_seconds = time.perf_counter() - t_acc
-        stats.iterations_done = total_steps * n_traj
-        stats.tiles_done = 0
-        stats.passes = passes
-        stats.restarts = restarts_total
-        stats.points_plotted = plotted_total
-        result = plan.finish(self._assemble(settings, framing, stats, count_full, depth_full, zmin_full, cv_full, ss, True))
-        summarize(result, look.percentile)
-        stats.elapsed = time.perf_counter() - t_start
-        tracker.update(1.0, "accumulated", force=True)
-        return result
-
-    @staticmethod
-    def _tile_size(Ws: int, Hs: int, nbuf: int) -> int:
-        side = int(math.sqrt(TILE_BUDGET_BYTES / (4 * (nbuf + 4))))
-        side = max(256, min(side, 8192) // 256 * 256)
-        return side if max(Ws, Hs) > side else max(Ws, Hs)
-
-    @staticmethod
-    def _assemble(settings, framing, stats, count, depth, zmin, cv, ss, complete) -> RenderResult:
-        c = downsample(count.astype(np.float64), ss, "sum").astype(np.float32)
-        d = downsample(depth.astype(np.float64), ss, "sum").astype(np.float32) if depth is not None else None
-        z = downsample(zmin, ss, "min").astype(np.float32) if zmin is not None else None
-        v = downsample(cv.astype(np.float64), ss, "sum").astype(np.float32) if cv is not None else None
-        return RenderResult(settings, c, framing, stats, d, z, v, complete)
+    def release(self) -> None:
+        """Free every device buffer owned here (safe to call twice)."""
+        for b in (self.pass_bufs or []) + (self.acc_bufs or []) + [self.b_kern, self.b_p, self.b_P]:
+            b.release()
+        self.pass_bufs = self.acc_bufs = None
+        for ts in self.state.values():
+            for key in ("state", "rng", "prev", "prevd", "stats", "esc"):
+                ts[key].release()
+        self.state.clear()
 
 
 selector.register("opencl", OpenCLEngine)

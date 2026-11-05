@@ -26,6 +26,7 @@ DIALOG_CALLS = {"information", "warning", "critical", "question", "getText", "ge
                 "getOpenFileName", "getSaveFileName", "getExistingDirectory"}  # parent, title, text, ...
 DOCK = {"_dock": 1}  # name → index of the title argument
 LETTER = re.compile(r"[A-Za-zÀ-ÿ]")
+HEX_COLOUR = re.compile(r"^#[0-9a-fA-F]{3,8}$")  # "#ff0000" has letters but is not a message
 
 
 def _callee(node: ast.Call) -> str:
@@ -38,7 +39,10 @@ def _callee(node: ast.Call) -> str:
 
 
 def _wrappable(arg: ast.expr) -> bool:
-    return isinstance(arg, ast.Constant) and isinstance(arg.value, str) and bool(LETTER.search(arg.value))
+    """A plain string literal that reads as a message: has a letter and is not a hex colour."""
+    if not (isinstance(arg, ast.Constant) and isinstance(arg.value, str)):
+        return False
+    return bool(LETTER.search(arg.value)) and not HEX_COLOUR.match(arg.value)
 
 
 def targets(tree: ast.AST) -> list[ast.Constant]:

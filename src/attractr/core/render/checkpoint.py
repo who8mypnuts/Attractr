@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import copy
 import json
+import zipfile
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -34,6 +35,7 @@ SUFFIX = ".attractr-ckpt.npz"
 
 @dataclass
 class Checkpoint:
+    """Accumulation buffers of an unfinished render plus what they contain (see the module docstring)."""
     settings: RenderSettings
     framing: Framing
     count: np.ndarray
@@ -50,6 +52,7 @@ class Checkpoint:
     # ── construction ───────────────────────────────────────────────────────────
     @staticmethod
     def from_result(result: RenderResult, segment: int = 1) -> Checkpoint:
+        """Snapshot a (partial) result; ``segment`` counts previous resumes."""
         st = result.stats
         return Checkpoint(
             result.settings, result.framing, result.count, result.depth_sum, result.zmin, result.cv_sum,
@@ -70,6 +73,7 @@ class Checkpoint:
 
     # ── persistence ────────────────────────────────────────────────────────────
     def save(self, path: str | Path) -> Path:
+        """Write an ``.npz`` (atomically via a temp file); returns the path."""
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         meta = {
@@ -96,17 +100,29 @@ class Checkpoint:
 
     @staticmethod
     def load(path: str | Path) -> Checkpoint:
-        with np.load(path) as z:
-            meta = json.loads(bytes(z["meta"]).decode())
-            if meta.get("format") != FORMAT:
-                raise ValueError(f"unsupported checkpoint format {meta.get('format')}")
-            get = lambda k: z[k] if k in z.files else None  # noqa: E731
-            return Checkpoint(
-                RenderSettings.from_dict(meta["settings"]), _framing_from_dict(meta["framing"]),
-                z["count"], get("depth_sum"), get("zmin"), get("cv_sum"),
-                int(meta["iterations_done"]), int(meta["tiles_done"]), int(meta["tiles"]),
-                float(meta["elapsed"]), str(meta["engine"]), int(meta["segment"]),
-            )
+        """Read a checkpoint written by :meth:`save`.
+
+        Raises:
+            OSError: the file cannot be read.
+            ValueError: the file is not an Attractr checkpoint, is damaged, or has an unknown format.
+        """
+        try:
+            with np.load(path) as z:
+                meta = json.loads(bytes(z["meta"]).decode())
+                if meta.get("format") != FORMAT:
+                    raise ValueError(f"unsupported checkpoint format {meta.get('format')}")
+
+                def plane(key: str) -> np.ndarray | None:
+                    return z[key] if key in z.files else None
+
+                return Checkpoint(
+                    RenderSettings.from_dict(meta["settings"]), _framing_from_dict(meta["framing"]),
+                    z["count"], plane("depth_sum"), plane("zmin"), plane("cv_sum"),
+                    int(meta["iterations_done"]), int(meta["tiles_done"]), int(meta["tiles"]),
+                    float(meta["elapsed"]), str(meta["engine"]), int(meta["segment"]),
+                )
+        except (KeyError, TypeError, zipfile.BadZipFile, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ValueError(f"{path} is not a readable Attractr checkpoint ({type(exc).__name__}: {exc})") from exc
 
     # ── merging into a fresh accumulation ──────────────────────────────────────
     def merge_into(self, result: RenderResult, final: bool = True) -> None:
@@ -158,5 +174,6 @@ def checkpoint_path(out_dir: Path, stem: str) -> Path:
 
 
 def list_checkpoints(out_dir: Path) -> list[Path]:
+    """Checkpoint files under ``out_dir/checkpoints``, newest first."""
     d = out_dir / "checkpoints"
     return sorted(d.glob(f"*{SUFFIX}"), key=lambda p: p.stat().st_mtime, reverse=True) if d.is_dir() else []
