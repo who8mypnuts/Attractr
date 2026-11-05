@@ -19,7 +19,7 @@ from attractr.core.render.accumulators import color_value_range, needs_for
 from attractr.core.render.checkpoint import Checkpoint
 from attractr.core.render.engines import selector
 from attractr.core.render.engines.base import Engine, EngineCaps, PassSink, resume_plan
-from attractr.core.render.engines.cpu_numba import apply_lock, downsample, effective_camera, splat_kernel
+from attractr.core.render.engines.cpu_numba import apply_lock, downsample, effective_camera, escape_config, splat_kernel
 from attractr.core.render.engines.gl_common import read_shader
 from attractr.core.render.engines.state import seed_from_points
 from attractr.core.render.framing import compute_framing
@@ -33,6 +33,8 @@ MAX_STEPS_PER_PASS = 256
 TARGET_PASS_SECONDS = 0.3
 TILE_BUDGET_BYTES = int(float(os.environ.get("ATTRACTR_GPU_BUDGET_MB", "768")) * 1024 * 1024)
 ACCUM_WARMUP = 64
+INTERLEAVE_ROUNDS = 8  # tiled renders visit every tile this many times so progress stays uniform
+MIN_FINISH_STEPS = 16
 
 PARAMS_DTYPE = np.dtype([
     ("steps", "i4"), ("substeps", "i4"), ("splat_r", "i4"), ("gap_fill", "i4"), ("color_code", "i4"),
@@ -41,6 +43,7 @@ PARAMS_DTYPE = np.dtype([
     ("dt", "f4"), ("inv_radius", "f4"), ("cx", "f4"), ("cy", "f4"), ("focal", "f4"), ("persp", "f4"),
     ("jitter", "f4"), ("inv_n", "f4"), ("cv_lo", "f4"), ("cv_inv_range", "f4"), ("t0", "f4"),
     ("R", "f4", (9,)), ("center", "f4", (3,)), ("ic", "f4", (4,)),
+    ("esc_lo", "f4", (3,)), ("esc_hi", "f4", (3,)), ("esc_cfg", "f4", (3,)),
 ])
 
 
@@ -199,9 +202,10 @@ class OpenCLEngine(Engine):
         P["R"] = R
         P["center"] = np.asarray(framing.center, dtype=np.float32)
         P["ic"] = np.asarray(spec.ic, dtype=np.float32)
+        esc_cfg = escape_config(spec)
+        P["esc_lo"], P["esc_hi"], P["esc_cfg"] = esc_cfg[0:6:2], esc_cfg[1:6:2], esc_cfg[6:9]
 
         total_steps = math.ceil(budget / n_traj)
-        steps_all = max(1, total_steps * (len(tiles) - plan.skip_tiles))
         done_all = 0
         passes = 0
         restarts_total = 0
@@ -209,117 +213,151 @@ class OpenCLEngine(Engine):
         steps_per_pass = 16
         t_acc = time.perf_counter()
         last_partial = time.perf_counter()
+        active = [ti for ti in range(len(tiles)) if ti >= plan.skip_tiles]
+        steps_all = max(1, total_steps * len(active))
+        rounds = 1 if len(active) <= 1 else INTERLEAVE_ROUNDS
+        finish_at: int | None = None
+        zeros4 = np.zeros((n_traj, 4), dtype=np.float32)
 
-        for ti, (tx, ty, tw, th) in enumerate(tiles):
-            if ti < plan.skip_tiles:
-                continue  # complete in the checkpoint
-            cancel.check()
+        # per-tile trajectory state persists across rounds; the big accumulators are re-created per visit
+        tile_state: dict[int, dict] = {}
+        for ti in active:
             st = seed_from_points(n_traj, plan.seed, sample_pts, framing.radius * 1e-2)
             state = np.zeros((n_traj, 4), dtype=np.float64 if fp64 else np.float32)
             state[:, 0], state[:, 1], state[:, 2], state[:, 3] = st.X, st.Y, st.Z, st.W
-            t_base = [0.0]
-            npix = tw * th
-            b_state = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=state)
-            b_rng = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=st.RS.astype(np.uint32))
-            zeros4 = np.zeros((n_traj, 4), dtype=np.float32)
-            b_prev = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=zeros4)
-            b_prevd = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=zeros4)
-            b_stats = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=np.zeros(4, dtype=np.uint32))
-            u_zero = np.zeros(npix, dtype=np.uint32)
-            u_inf = np.full(npix, 0xFFFFFFFF, dtype=np.uint32)
-            f_zero = np.zeros(npix, dtype=np.float32)
-            f_inf = np.full(npix, np.inf, dtype=np.float32)
-            b_cnt = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=u_zero)
-            b_dep = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=u_zero)
-            b_zmn = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=u_inf)
-            b_cvb = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=u_zero)
-            a_cnt = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=f_zero)
-            a_dep = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=f_zero)
-            a_zmn = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=f_inf)
-            a_cv = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=f_zero)
-            P["w"], P["h"] = tw, th
-            P["cx"], P["cy"] = cx - tx, cy - ty
-            b_P = cl.Buffer(ctx, mf.READ_ONLY, size=P.nbytes)
+            tile_state[ti] = {
+                "state": cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=state),
+                "rng": cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=st.RS.astype(np.uint32)),
+                "prev": cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=zeros4),
+                "prevd": cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=zeros4),
+                "stats": cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=np.zeros(4, dtype=np.uint32)),
+                "esc": cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=st.escape_state()),
+                "t_base": 0.0, "steps_done": 0, "warmed": False,
+            }
 
-            def dispatch(steps: int, plot: int) -> None:
-                P["steps"], P["do_plot"], P["t0"] = steps, plot, t_base[0]
-                t_base[0] += steps * substeps
-                cl.enqueue_copy(queue, b_P, P)
-                k_iterate(queue, (n_traj,), (128,), b_state, b_rng, b_prev, b_prevd, b_stats,
-                          b_cnt, b_dep, b_zmn, b_cvb, b_P, b_kern, b_p)
+        def emit_partial(frac: float) -> None:
+            nonlocal last_partial
+            last_partial = time.perf_counter()
+            stats.iterations_done = min(t["steps_done"] for t in tile_state.values()) * n_traj if tile_state else 0
+            stats.accumulate_seconds = time.perf_counter() - t_acc
+            sink(plan.finish(self._assemble(settings, framing, stats, count_full, depth_full, zmin_full, cv_full, ss, False)), frac)
 
-            def merge() -> None:
-                gsz = int(math.ceil(npix / 256) * 256)
-                k_merge(queue, (gsz,), (256,), b_cnt, b_dep, b_zmn, b_cvb, a_cnt, a_dep, a_zmn, a_cv,
-                        np.int32(npix), np.int32(needs.depth), np.int32(needs.zmin), np.int32(needs.color),
-                        np.float32(cv_lo), np.float32(cv_hi - cv_lo))
-
-            def readback() -> None:
-                def rd(buf):
-                    out = np.empty(npix, dtype=np.float32)
-                    cl.enqueue_copy(queue, out, buf)
-                    return out.reshape(th, tw)
-
-                queue.finish()
-                count_full[ty : ty + th, tx : tx + tw] = rd(a_cnt)
-                if depth_full is not None:
-                    depth_full[ty : ty + th, tx : tx + tw] = rd(a_dep)
-                if zmin_full is not None:
-                    zmin_full[ty : ty + th, tx : tx + tw] = rd(a_zmn)
-                if cv_full is not None:
-                    cv_full[ty : ty + th, tx : tx + tw] = rd(a_cv)
-
-            try:
-                warm = stats.warmup_steps
-                while warm > 0:
-                    k = min(warm, MAX_STEPS_PER_PASS)
-                    dispatch(k, 0)
-                    warm -= k
-                cl.enqueue_copy(queue, b_prev, zeros4)
-                steps_done = 0
-                while steps_done < total_steps:
+        try:
+            for rnd in range(rounds):
+                round_target = math.ceil(total_steps * (rnd + 1) / rounds)
+                for ti in active:
+                    tx, ty, tw, th = tiles[ti]
+                    ts = tile_state[ti]
+                    if finish_at is not None:
+                        round_target = min(round_target, finish_at)
+                    if ts["steps_done"] >= round_target and ts["warmed"]:
+                        continue
                     cancel.check()
-                    if cancel.finishing:  # soft stop: this and every later tile keep the reduced budget
-                        if not stats.finished_early:
-                            stats.finished_early = True
-                            stats.notes.append(f"Finished early on request at {100 * steps_done / total_steps:.0f} % of the budget.")
-                        total_steps = steps_done
-                        break
-                    k = min(steps_per_pass, total_steps - steps_done, MAX_STEPS_PER_PASS)
-                    tp = time.perf_counter()
-                    dispatch(k, 1)
-                    merge()
-                    queue.finish()
-                    dtp = time.perf_counter() - tp
-                    steps_done += k
-                    done_all += k
-                    passes += 1
-                    if dtp > 0:
-                        steps_per_pass = int(min(max(4, k * TARGET_PASS_SECONDS / dtp), MAX_STEPS_PER_PASS))
-                    frac = done_all / steps_all
-                    tracker.update(0.05 + 0.9 * frac, f"tile {ti + 1}/{len(tiles)} · pass {passes} · {done_all * n_traj / 1e6:.1f} M points")
-                    if sink is not None and len(tiles) == 1 and (time.perf_counter() - last_partial > 0.5 or steps_done >= total_steps):
-                        last_partial = time.perf_counter()
+                    npix = tw * th
+                    u_zero = np.zeros(npix, dtype=np.uint32)
+                    u_inf = np.full(npix, 0xFFFFFFFF, dtype=np.uint32)
+
+                    def slab(src, fill):
+                        if src is None or rnd == 0:
+                            return np.full(npix, fill, dtype=np.float32)
+                        return np.ascontiguousarray(src[ty : ty + th, tx : tx + tw], dtype=np.float32).ravel()
+
+                    b_cnt = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=u_zero)
+                    b_dep = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=u_zero)
+                    b_zmn = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=u_inf)
+                    b_cvb = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=u_zero)
+                    a_cnt = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=slab(count_full, 0.0))
+                    a_dep = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=slab(depth_full, 0.0))
+                    a_zmn = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=slab(zmin_full, np.inf))
+                    a_cv = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=slab(cv_full, 0.0))
+                    P["w"], P["h"] = tw, th
+                    P["cx"], P["cy"] = cx - tx, cy - ty
+                    b_P = cl.Buffer(ctx, mf.READ_ONLY, size=P.nbytes)
+                    b_state, b_rng, b_prev, b_prevd, b_stats = (ts[k] for k in ("state", "rng", "prev", "prevd", "stats"))
+
+                    def dispatch(steps: int, plot: int, ts=ts, b_P=b_P, bufs=(b_state, b_rng, b_prev, b_prevd, b_stats, b_cnt, b_dep, b_zmn, b_cvb)) -> None:
+                        P["steps"], P["do_plot"], P["t0"] = steps, plot, ts["t_base"]
+                        ts["t_base"] += steps * substeps
+                        cl.enqueue_copy(queue, b_P, P)
+                        k_iterate(queue, (n_traj,), (128,), *bufs, b_P, b_kern, b_p, ts["esc"])
+
+                    def merge(npix=npix, bufs=(b_cnt, b_dep, b_zmn, b_cvb, a_cnt, a_dep, a_zmn, a_cv)) -> None:
+                        gsz = int(math.ceil(npix / 256) * 256)
+                        k_merge(queue, (gsz,), (256,), *bufs,
+                                np.int32(npix), np.int32(needs.depth), np.int32(needs.zmin), np.int32(needs.color),
+                                np.float32(cv_lo), np.float32(cv_hi - cv_lo))
+
+                    def readback(npix=npix, tx=tx, ty=ty, tw=tw, th=th, bufs=(a_cnt, a_dep, a_zmn, a_cv)) -> None:
+                        def rd(buf):
+                            out = np.empty(npix, dtype=np.float32)
+                            cl.enqueue_copy(queue, out, buf)
+                            return out.reshape(th, tw)
+
+                        queue.finish()
+                        count_full[ty : ty + th, tx : tx + tw] = rd(bufs[0])
+                        if depth_full is not None:
+                            depth_full[ty : ty + th, tx : tx + tw] = rd(bufs[1])
+                        if zmin_full is not None:
+                            zmin_full[ty : ty + th, tx : tx + tw] = rd(bufs[2])
+                        if cv_full is not None:
+                            cv_full[ty : ty + th, tx : tx + tw] = rd(bufs[3])
+
+                    try:
+                        if not ts["warmed"]:
+                            warm = stats.warmup_steps
+                            while warm > 0:
+                                k = min(warm, MAX_STEPS_PER_PASS)
+                                dispatch(k, 0)
+                                warm -= k
+                            cl.enqueue_copy(queue, b_prev, zeros4)
+                            ts["warmed"] = True
+                        while ts["steps_done"] < round_target:
+                            cancel.check()
+                            if cancel.finishing and finish_at is None:  # soft stop: every tile ends at this count
+                                finish_at = max(ts["steps_done"], min(total_steps, MIN_FINISH_STEPS))
+                                round_target = min(round_target, finish_at)
+                                stats.finished_early = True
+                                stats.notes.append(f"Finished early on request at {100 * finish_at / total_steps:.0f} % of the budget.")
+                                if ts["steps_done"] >= round_target:
+                                    break
+                            k = min(steps_per_pass, round_target - ts["steps_done"], MAX_STEPS_PER_PASS)
+                            tp = time.perf_counter()
+                            dispatch(k, 1)
+                            merge()
+                            queue.finish()
+                            dtp = time.perf_counter() - tp
+                            ts["steps_done"] += k
+                            done_all += k
+                            passes += 1
+                            if dtp > 0:
+                                steps_per_pass = int(min(max(4, k * TARGET_PASS_SECONDS / dtp), MAX_STEPS_PER_PASS))
+                            frac = done_all / steps_all
+                            tracker.update(0.05 + 0.9 * frac, f"tile {ti + 1}/{len(tiles)} · round {rnd + 1}/{rounds} · pass {passes} · {done_all * n_traj / 1e6:.1f} M points")
+                            if sink is not None and len(active) == 1 and (time.perf_counter() - last_partial > 0.5 or ts["steps_done"] >= total_steps):
+                                readback()
+                                emit_partial(frac)
                         readback()
-                        stats.iterations_done = steps_done * n_traj
-                        stats.accumulate_seconds = time.perf_counter() - t_acc
-                        sink(plan.finish(self._assemble(settings, framing, stats, count_full, depth_full, zmin_full, cv_full, ss, False)), frac)
-                readback()
-                s = np.zeros(4, dtype=np.uint32)
-                cl.enqueue_copy(queue, s, b_stats)
+                    finally:
+                        for b in (b_cnt, b_dep, b_zmn, b_cvb, a_cnt, a_dep, a_zmn, a_cv, b_P):
+                            b.release()
+                if sink is not None and len(active) > 1:
+                    emit_partial(done_all / steps_all)
+                if finish_at is not None and all(t["steps_done"] >= finish_at for t in tile_state.values()):
+                    break
+            for ts in tile_state.values():
+                sv = np.zeros(4, dtype=np.uint32)
+                cl.enqueue_copy(queue, sv, ts["stats"])
                 queue.finish()
-                restarts_total += int(s[0])
-                plotted_total += (int(s[2]) * 4294967296.0 + int(s[1])) / 16.0
-                if sink is not None and len(tiles) > 1:  # tile-complete partial (checkpointable)
-                    stats.tiles_done = ti + 1
-                    stats.iterations_done = total_steps * n_traj
-                    stats.accumulate_seconds = time.perf_counter() - t_acc
-                    sink(plan.finish(self._assemble(settings, framing, stats, count_full, depth_full, zmin_full, cv_full, ss, False)), (ti + 1) / len(tiles))
-            finally:
-                for b in (b_state, b_rng, b_prev, b_prevd, b_stats, b_cnt, b_dep, b_zmn, b_cvb, a_cnt, a_dep, a_zmn, a_cv, b_P):
-                    b.release()
-        b_kern.release()
-        b_p.release()
+                restarts_total += int(sv[0])
+                plotted_total += (int(sv[2]) * 4294967296.0 + int(sv[1])) / 16.0
+        finally:
+            for ts in tile_state.values():
+                for key in ("state", "rng", "prev", "prevd", "stats", "esc"):
+                    ts[key].release()
+            b_kern.release()
+            b_p.release()
+        if finish_at is not None:
+            total_steps = finish_at
 
         stats.accumulate_seconds = time.perf_counter() - t_acc
         stats.iterations_done = total_steps * n_traj

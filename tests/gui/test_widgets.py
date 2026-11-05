@@ -90,3 +90,23 @@ def test_search_panel_polynomial_mode(app):
     assert spec.id == POLY_ID and settings.attractor == POLY_ID and len(spec.params) == 30
     assert spec.params[0].lo == -1.2 and polynomial_space(0.5).params[3].hi == 0.5
     assert settings.look == doc.settings.look  # the current look carries over
+
+
+def test_parameter_history_persists_in_document(app, tmp_path):
+    from attractr.core.attractors.registry import registry
+    from attractr.gui.panels.parameters_panel import ParametersPanel
+    from attractr.gui.state.document import Document
+
+    doc = Document()
+    doc.set_attractor(registry.get("lorenz"))
+    panel = ParametersPanel(doc)
+    panel.rebuild(doc.spec)
+    panel.sliders["rho"].spin.setValue(31.0)
+    panel.sliders["rho"].nudge_up.click()
+    assert [round(v, 6) for v in doc.history_for("rho")] == [31.0, 31.5]
+    doc.save(tmp_path / "p.attractr")
+    doc2 = Document()
+    doc2.load(tmp_path / "p.attractr")
+    panel2 = ParametersPanel(doc2)
+    panel2.rebuild(doc2.spec)
+    assert [round(v, 6) for v in panel2.sliders["rho"].history] == [31.0, 31.5]

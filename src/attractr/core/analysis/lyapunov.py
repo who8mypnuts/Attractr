@@ -37,6 +37,8 @@ def largest_exponent(
     d0: float = 1e-8,
 ) -> LyapunovResult:
     """Estimate λ₁ from one trajectory that starts on the attractor."""
+    if spec.is_escape:
+        return LyapunovResult(float("nan"), "escape-time", 0, False)
     cf = spec.compiled(integrator)
     mod = kernel_module(cf)
     p = spec.params_array(params)

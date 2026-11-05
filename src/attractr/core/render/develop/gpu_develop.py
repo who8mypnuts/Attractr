@@ -1,11 +1,13 @@
 """GPU development pass (OpenGL 4.3 compute) for large images.
 
 The per-pixel styles (gas, dust, light, plasma) are evaluated by ``shaders/develop.comp``
-with exactly the same formulas as the NumPy path; the handful of global scalars they need
-(normaliser, colour-value and depth percentiles) are still computed on the CPU from a
-strided subsample.  Anything the shader does not implement (liquid/solid lighting,
-histogram equalisation, bloom, image/procedural backgrounds) returns ``None`` so the
-caller falls back to the CPU developer.
+and the lit styles (liquid, solid) by ``shaders/develop_light.comp`` (height field →
+3×3 blur → screen-space normals → Phong, processed in row chunks with a 2-row halo), with
+exactly the same formulas as the NumPy path; the handful of global scalars they need
+(normaliser, colour-value / depth / surface-depth percentiles) are still computed on the
+CPU from a strided subsample.  Anything the shaders do not implement (histogram
+equalisation, bloom, image/procedural backgrounds) returns ``None`` so the caller falls
+back to the CPU developer.
 
 The pass is opt-in per call through :func:`wanted` (large images only — for preview-sized
 results the NumPy path is faster than the round trip) and switches itself off for the
@@ -27,6 +29,8 @@ log = logging.getLogger(__name__)
 MIN_PIXELS = 1_500_000  # below this the CPU path wins
 CHUNK_PIXELS = 4_000_000  # rows are processed in chunks so buffers stay < ~100 MB
 STYLE_CODES = {"gas": 0, "dust": 1, "light": 2, "plasma": 3}
+LIT_STYLE_CODES = {"liquid": 4, "solid": 5}
+HALO = 2  # rows of context the lit pass needs on each side of a chunk
 SUBSAMPLE = 7  # stride for the percentile estimates (prime, to dodge structured aliasing)
 
 enabled = True  # preference toggle (GUI / CLI)
@@ -34,12 +38,16 @@ _lock = threading.Lock()
 _failed = False
 _ctx = None
 _prog = None
+_prog_light = None
 _thread_id: int | None = None
 
 
 def applicable(result: RenderResult, look: Look) -> bool:
     """True when the shader implements everything this look needs."""
-    if look.style not in STYLE_CODES:
+    if look.style in LIT_STYLE_CODES:
+        if result.zmin is None:
+            return False
+    elif look.style not in STYLE_CODES:
         return False
     if look.equalize:
         return False
@@ -66,22 +74,24 @@ def _ensure_program():
     """Lazily create the (single, process-wide) context + program; contexts are not
     shareable across threads, so the pass is serialised by ``_lock`` and the context is
     re-created if a different thread asks for it."""
-    global _ctx, _prog, _thread_id
-    from attractr.core.render.engines.gl_common import create_context, read_shader
+    global _ctx, _prog, _prog_light, _thread_id
+    from attractr.core.render.engines.gl_common import create_context, make_current, read_shader
 
     tid = threading.get_ident()
     if _ctx is not None and _thread_id == tid:
-        return _ctx, _prog
+        make_current(_ctx)
+        return _ctx, _prog, _prog_light
     if _ctx is not None:
         try:
             _ctx.release()
         except Exception:  # noqa: BLE001
             pass
-        _ctx = _prog = None
+        _ctx = _prog = _prog_light = None
     ctx = create_context(430)
     prog = ctx.compute_shader(read_shader("develop.comp"))
-    _ctx, _prog, _thread_id = ctx, prog, tid
-    return ctx, prog
+    prog_light = ctx.compute_shader(read_shader("develop_light.comp"))
+    _ctx, _prog, _prog_light, _thread_id = ctx, prog, prog_light, tid
+    return ctx, prog, prog_light
 
 
 def _set(prog, name: str, value) -> None:
@@ -104,7 +114,9 @@ def develop_gpu(result: RenderResult, look: Look, norm: float, lut: np.ndarray) 
 
 
 def _run(result: RenderResult, look: Look, norm: float, lut: np.ndarray) -> np.ndarray:
-    ctx, prog = _ensure_program()
+    if look.style in LIT_STYLE_CODES:
+        return _run_lit(result, look, norm, lut)
+    ctx, prog, _ = _ensure_program()
     h, w = result.count.shape
     mask = result.count > 0
     has_cv = result.cv_sum is not None
@@ -175,3 +187,130 @@ def release() -> None:
             except Exception:  # noqa: BLE001
                 pass
         _ctx = _prog = None
+
+
+def _light_uniforms(prog, look: Look) -> None:
+    from attractr.core.render.develop.lighting import light_direction
+
+    lt = look.light
+    _set(prog, "u_light_dir", tuple(float(v) for v in light_direction(lt)))
+    _set(prog, "u_light_color", tuple(float(c) for c in lt.color))
+    _set(prog, "u_light", (float(lt.ambient), float(lt.diffuse), float(lt.specular), float(lt.shininess)))
+
+
+def _solid_zmin_range(result: RenderResult, look: Look, norm: float) -> tuple[float, float]:
+    """1–99 % of the nearest depth over the surface (density > threshold), from a subsample
+    tone-mapped exactly like the shader does it."""
+    from attractr.core.render.develop.tonemap import apply_curve, log_density
+
+    cnt = result.count[::SUBSAMPLE, ::SUBSAMPLE]
+    d = apply_curve(log_density(cnt, norm), look)
+    d[cnt <= 0] = 1.0 if look.invert else 0.0
+    surf = d > look.solid_threshold
+    z = result.zmin[::SUBSAMPLE, ::SUBSAMPLE][surf]
+    z = z[np.isfinite(z)]
+    if z.size == 0:
+        return 0.0, 1.0
+    lo, hi = np.percentile(z, [1.0, 99.0])
+    return float(lo), float(hi)
+
+
+def _run_lit(result: RenderResult, look: Look, norm: float, lut: np.ndarray) -> np.ndarray:
+    ctx, _, prog = _ensure_program()
+    h, w = result.count.shape
+    mask = result.count > 0
+    has_cv = result.cv_sum is not None
+    has_depth = result.depth_sum is not None
+    bg = look.background
+    flags = (1 if has_cv else 0) | (2 if has_depth else 0) | (4 if look.invert else 0) | 32
+    flags |= (8 if bg.mode == "transparent" else 0) | (16 if bg.mode == "gradient" else 0)
+    depth_range = _percentiles(result.mean_depth(), mask) if has_depth else (0.0, 1.0)
+    zmin_range = _solid_zmin_range(result, look, norm) if look.style == "solid" else (0.0, 1.0)
+    zmin = np.where(np.isfinite(result.zmin), result.zmin, np.float32(3.0e38)).astype(np.float32)
+
+    lut_buf = ctx.buffer(np.ascontiguousarray(lut, dtype=np.float32).tobytes())
+    lut_buf.bind_to_storage_buffer(3)
+    fill_buf = ctx.buffer(np.zeros(1, dtype=np.uint32).tobytes())
+    fill_buf.bind_to_storage_buffer(8)
+    _set(prog, "u_width", w)
+    _set(prog, "u_height", h)
+    _set(prog, "u_lut_n", int(lut.shape[0]))
+    _set(prog, "u_style", LIT_STYLE_CODES[look.style])
+    _set(prog, "u_flags", flags)
+    _set(prog, "u_norm", float(norm))
+    _set(prog, "u_gamma", float(look.gamma))
+    _set(prog, "u_brightness", float(look.brightness))
+    _set(prog, "u_contrast", float(look.contrast))
+    _set(prog, "u_depth_cue", float(look.depth_cue))
+    _set(prog, "u_threshold", float(look.solid_threshold))
+    _set(prog, "u_ppu", float(min(w, h) * 0.12))
+    _set(prog, "u_cv_range", (0.0, 1.0))
+    _set(prog, "u_depth_range", depth_range)
+    _set(prog, "u_zmin_range", zmin_range)
+    _set(prog, "u_bg0", tuple(float(c) for c in bg.color))
+    _set(prog, "u_bg1", tuple(float(c) for c in bg.color2))
+    _light_uniforms(prog, look)
+
+    rows_per_chunk = max(1, CHUNK_PIXELS // w)
+    dummy = ctx.buffer(reserve=16)
+    out = np.empty((h, w, 4), dtype=np.float32)
+
+    def bind_rows(r0: int, r1: int):
+        n = (r1 - r0) * w
+        bufs = [ctx.buffer(np.ascontiguousarray(result.count[r0:r1], dtype=np.float32).tobytes())]
+        bufs[0].bind_to_storage_buffer(0)
+        (ctx.buffer(np.ascontiguousarray(result.depth_sum[r0:r1], dtype=np.float32).tobytes()) if has_depth else dummy).bind_to_storage_buffer(2)
+        zb = ctx.buffer(np.ascontiguousarray(zmin[r0:r1]).tobytes())
+        zb.bind_to_storage_buffer(5)
+        bufs.append(zb)
+        dummy.bind_to_storage_buffer(1)
+        _set(prog, "u_n", n)
+        _set(prog, "u_rows", r1 - r0)
+        _set(prog, "u_row0", r0)
+        return n, bufs
+
+    def run(n: int) -> None:
+        prog.run(group_x=(n + 255) // 256)
+        ctx.memory_barrier()
+
+    try:
+        # pass 0: global fill height (max zmin over the surface)
+        _set(prog, "u_pass", 0)
+        for r0 in range(0, h, rows_per_chunk):
+            n, bufs = bind_rows(r0, min(h, r0 + rows_per_chunk))
+            run(n)
+            for b in bufs:
+                b.release()
+        ctx.finish()
+        key = int(np.frombuffer(fill_buf.read(), dtype=np.uint32)[0])
+        if key == 0:
+            fill = 0.0
+        else:
+            raw = (~np.uint32(key)) if (key & 0x80000000) == 0 else np.uint32(key & 0x7FFFFFFF)
+            fill = -float(np.frombuffer(np.uint32(raw).tobytes(), dtype=np.float32)[0])
+        _set(prog, "u_fill", fill)
+        # passes 1–3 per chunk with halos
+        for c0 in range(0, h, rows_per_chunk):
+            c1 = min(h, c0 + rows_per_chunk)
+            r0, r1 = max(0, c0 - HALO), min(h, c1 + HALO)
+            n, bufs = bind_rows(r0, r1)
+            hraw = ctx.buffer(reserve=n * 4)
+            hblur = ctx.buffer(reserve=n * 4)
+            ob = ctx.buffer(reserve=(c1 - c0) * w * 16)
+            hraw.bind_to_storage_buffer(6)
+            hblur.bind_to_storage_buffer(7)
+            ob.bind_to_storage_buffer(4)
+            _set(prog, "u_core0", c0 - r0)
+            _set(prog, "u_core_rows", c1 - c0)
+            for pass_id in (1, 2, 3):
+                _set(prog, "u_pass", pass_id)
+                run(n)
+            ctx.finish()
+            out[c0:c1] = np.frombuffer(ob.read(), dtype=np.float32).reshape(c1 - c0, w, 4)
+            for b in bufs + [hraw, hblur, ob]:
+                b.release()
+    finally:
+        dummy.release()
+        lut_buf.release()
+        fill_buf.release()
+    return out

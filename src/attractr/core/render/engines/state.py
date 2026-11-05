@@ -24,6 +24,13 @@ class TrajectoryState:
     DZp: np.ndarray
     W: np.ndarray | None = None  # 4th state variable (starts at 0)
     SEC: np.ndarray | None = None  # previous Poincaré-section value
+    # escape-time orbit bookkeeping (kind: escape): start point, mode, counters
+    SX: np.ndarray | None = None
+    SY: np.ndarray | None = None
+    SZ: np.ndarray | None = None
+    EMODE: np.ndarray | None = None
+    ECNT: np.ndarray | None = None
+    ENREP: np.ndarray | None = None
 
     def __post_init__(self) -> None:
         n = self.X.shape[0]
@@ -31,6 +38,19 @@ class TrajectoryState:
             self.W = np.zeros(n, dtype=np.float64)
         if self.SEC is None:
             self.SEC = np.zeros(n, dtype=np.float64)
+        if self.SX is None:
+            self.SX, self.SY, self.SZ = self.X.copy(), self.Y.copy(), self.Z.copy()
+        if self.EMODE is None:
+            self.EMODE = np.zeros(n, dtype=np.uint8)
+            self.ECNT = np.zeros(n, dtype=np.int64)
+            self.ENREP = np.zeros(n, dtype=np.int64)
+
+    def escape_state(self) -> np.ndarray:
+        """``[n, 8]`` float32 rows (x0, y0, z0, 0, mode, cnt, nrep, 0) for the GPU kernels."""
+        out = np.zeros((self.n, 8), dtype=np.float32)
+        out[:, 0], out[:, 1], out[:, 2] = self.SX, self.SY, self.SZ
+        out[:, 4], out[:, 5], out[:, 6] = self.EMODE, self.ECNT, self.ENREP
+        return out
 
     @property
     def n(self) -> int:

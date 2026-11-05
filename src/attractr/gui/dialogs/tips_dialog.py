@@ -5,6 +5,8 @@ from __future__ import annotations
 from PySide6.QtCore import QSettings
 from PySide6.QtWidgets import QCheckBox, QDialog, QDialogButtonBox, QLabel, QVBoxLayout
 
+from attractr.i18n import tr
+
 TIPS = """
 <h3 style='color:#4fc3f7'>Welcome to Attractr</h3>
 <ul>
@@ -22,12 +24,12 @@ TIPS = """
 class TipsDialog(QDialog):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Tips")
+        self.setWindowTitle(tr("Tips"))
         lay = QVBoxLayout(self)
         label = QLabel(TIPS)
         label.setWordWrap(True)
         lay.addWidget(label)
-        self.again = QCheckBox("Show at start-up")
+        self.again = QCheckBox(tr("Show at start-up"))
         self.again.setChecked(True)
         lay.addWidget(self.again)
         bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)

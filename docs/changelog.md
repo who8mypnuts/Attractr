@@ -12,6 +12,35 @@ Milestones M0–M6 of the plan:
 * Animator: timeline/keyframes/easing, helpers, locked framing, frame sequences, ffmpeg encoding.
 * Reports (Markdown/Text/HTML/PDF), statistics, Lyapunov/dimension analysis, CLI.
 
+### Post-plan additions, second round
+
+* **Translations**: all ~275 user-visible GUI literals wrapped in `tr()` (`tools/wrap_tr.py`),
+  `.ts` extraction (`tools/extract_ts.py`), a complete **German** UI translation
+  (`ATTRACTR_LANG=de`), and per-locale **overlays** for `.atr` descriptions / hints
+  (`resources/i18n/attractors_de.json`, `tools/extract_attractor_strings.py`).
+* GL fix: each GPU engine now makes its own context current on entry, so two GL engines used
+  from the same thread (e.g. preview on `gl_points`, final on `gl_precision`) no longer produce
+  empty output.
+
+* **DSL `kind: escape`** — escape-time systems (Buddhabrot technique): random orbit starts in a
+  `region`, orbits iterated until `bailout`/`max_iter`, only escaping orbits (≥ `min_iter`) are
+  replayed and drawn; `x0/y0/z0` = orbit start, `w` = escape count. Implemented in the CPU, GL
+  compute and OpenCL kernels (same state machine); Buddhabrot, Burning Ship, Tricorn and Julia
+  escape-orbit attractors added (119 attractors).
+
+* **DSL `on_section { … }` + `section_dir:`**: assignments applied to the state after each plotted
+  section crossing (return maps with memory) and a crossing-direction filter; Lorenz and Rössler
+  return maps added (115 attractors). `gl_points` declines such programs (`Engine.supports`).
+
+* GPU develop pass now covers **Liquid and Solid** (`develop_light.comp`: screen-space height
+  field, blur, normals and Phong on the GPU, chunked with halos); inverted Solid/Liquid looks no
+  longer produce NaNs on the CPU path either.
+* **Interleaved tiles**: tiled GPU renders (all three GPU engines) visit every tile in 8 rounds —
+  uniform progress, live partials once per round, uniform checkpoints, and a uniform *Finish now*.
+* **Gallery → Re-render…**: multi-select gallery images and render them again with a render preset.
+* Parameter *Recent values* history is stored in the project file (`history`).
+* Checkpoints may be resumed with a different supersampling / splat radius / engine (documented + tested).
+
 ### Post-plan additions (suggested-improvements round)
 
 * **DSL**: fourth state variable `w` (`w' = …` / `dw = …`, `ic: x y z w`), `plot = ex, ey[, ez]`

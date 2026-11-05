@@ -36,6 +36,8 @@ def sample_attractor(
     The transient is discarded adaptively: after ``warmup`` steps we keep advancing in
     chunks until the sampled bounding sphere stops changing (slowly unfolding systems
     such as Rössler need far longer than a fixed step count)."""
+    if spec.is_escape:
+        return escape_cloud(spec, seed, n_traj * steps)
     cf = spec.compiled(integrator="rk4")
     mod = kernel_module(cf)
     st = seed_trajectories(n_traj, seed, spec.ic, spec.jitter)
@@ -99,6 +101,20 @@ def _drop_escapees(rows: np.ndarray, escaped: np.ndarray) -> None:
     bad = escaped | far
     if 0 < bad.sum() <= n // 2:
         rows[bad] = np.nan
+
+
+def escape_cloud(spec: AttractorSpec, seed: int, n: int) -> np.ndarray:
+    """Escape-time systems have no attractor to sample: the frame is the start region, so the
+    "sample" is a uniform cloud over it (also used to seed the orbit starts)."""
+    rng = np.random.default_rng(seed)
+    r = list(spec.region) + [0.0] * (6 - len(spec.region))
+    pts = np.empty((n, 7), dtype=np.float64)
+    pts[:, 0] = rng.uniform(r[0], r[1], n)
+    pts[:, 1] = rng.uniform(r[2], r[3], n)
+    pts[:, 2] = rng.uniform(r[4], r[5], n) if r[5] > r[4] else r[4]
+    pts[:, 3] = 0.0
+    pts[:, 4:7] = pts[:, :3]
+    return pts
 
 
 def plotted(pts: np.ndarray) -> np.ndarray:

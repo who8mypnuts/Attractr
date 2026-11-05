@@ -60,9 +60,9 @@ def accumulate(
     ``cancel.finish()`` stops accumulation early but still returns a complete result."""
     spec = resolve_spec(settings)
     if isinstance(engine, str):
-        eng = selector.select(engine, purpose)
+        eng = selector.select(engine, purpose, spec)
     elif engine is None:
-        eng = selector.select(settings.quality.engine, purpose)
+        eng = selector.select(settings.quality.engine, purpose, spec)
     else:
         eng = engine
     try:

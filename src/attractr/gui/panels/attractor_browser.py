@@ -11,6 +11,7 @@ from attractr.core.attractors.spec import AttractorSpec
 from attractr.core.render.pipeline import default_settings
 from attractr.gui.controllers.worker_client import WorkerClient as ThumbnailWorker
 from attractr.gui.state.document import Document
+from attractr.i18n import tr
 
 THUMB = 96
 
@@ -27,10 +28,10 @@ class AttractorBrowser(QWidget):
         lay.setContentsMargins(6, 6, 6, 6)
         top = QHBoxLayout()
         self.search = QLineEdit()
-        self.search.setPlaceholderText("Search attractors…")
+        self.search.setPlaceholderText(tr("Search attractors…"))
         self.search.setClearButtonEnabled(True)
         self.family = QComboBox()
-        self.family.addItem("All families", "")
+        self.family.addItem(tr("All families"), "")
         top.addWidget(self.search, 1)
         top.addWidget(self.family)
         lay.addLayout(top)

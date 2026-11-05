@@ -2,10 +2,11 @@
 
 Grammar (informal)::
 
-    program   := (param_decl | statement | choose | NEWLINE)*
+    program   := (param_decl | statement | choose | on_section | NEWLINE)*
     param     := 'param' IDENT '=' const ['[' const ',' const ']'] ['int'] ['step' '=' const] [STRING]
     statement := target '=' expr (';' | NEWLINE)
     choose    := 'choose' '{' (const ':' statement*)* '}'
+    on_section:= 'on_section' '{' statement* '}'          (assignments to x'/y'/z'/w' at a section crossing)
     expr      := or_expr
     or_expr   := and_expr ('or' and_expr)*
     and_expr  := not_expr ('and' not_expr)*
@@ -83,16 +84,36 @@ class Parser:
     def parse_program(self, header: dict[str, str]) -> Program:
         params: list[ParamDecl] = []
         body: list[Stmt] = []
+        on_section: list[Assign] = []
         self.skip_newlines()
         while not self.at("eof"):
             if self.at("ident", "param"):
                 params.append(self.parse_param())
             elif self.at("ident", "choose"):
                 body.append(self.parse_choose())
+            elif self.at("ident", "on_section"):
+                if on_section:
+                    raise FormulaError("only one on_section block is allowed", self.cur.line, self.cur.col)
+                on_section = self.parse_on_section()
             else:
                 body.append(self.parse_statement())
             self.skip_newlines()
-        return Program(header, tuple(params), tuple(body))
+        return Program(header, tuple(params), tuple(body), tuple(on_section))
+
+    def parse_on_section(self) -> list[Assign]:
+        start = self.expect("ident", "on_section")
+        self.expect("op", "{")
+        body: list[Assign] = []
+        self.skip_newlines()
+        while not self.at_op("}"):
+            if self.at("eof"):
+                raise FormulaError("unterminated on_section block", start.line, start.col)
+            body.append(self.parse_statement())
+            self.skip_newlines()
+        self.expect("op", "}")
+        if not body:
+            raise FormulaError("empty on_section block", start.line, start.col)
+        return body
 
     def parse_param(self) -> ParamDecl:
         start = self.expect("ident", "param")
@@ -279,7 +300,7 @@ class Parser:
             return Num(t.value)
         if t.kind == "ident":
             self.advance()
-            if t.text in ("and", "or", "not", "param", "choose"):
+            if t.text in ("and", "or", "not", "param", "choose", "on_section"):
                 raise FormulaError(f"unexpected keyword {t.text!r}", t.line, t.col, len(t.text))
             if self.at_op("("):
                 self.advance()

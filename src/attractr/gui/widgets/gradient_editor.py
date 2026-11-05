@@ -32,6 +32,7 @@ from attractr.core.color.gradient import Gradient, Stop
 from attractr.core.color.interpolation import SPACES
 from attractr.core.color.palettes import palettes
 from attractr.gui.widgets.gradient_bar import gradient_image
+from attractr.i18n import tr
 
 HANDLE_H = 14
 
@@ -170,7 +171,7 @@ class GradientEditor(QDialog):
 
     def __init__(self, gradient: Gradient, parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Gradient editor")
+        self.setWindowTitle(tr("Gradient editor"))
         self.setModal(False)
         self._updating = False
         lay = QHBoxLayout(self)
@@ -188,11 +189,11 @@ class GradientEditor(QDialog):
         self.alpha.setRange(0.0, 1.0)
         self.alpha.setDecimals(3)
         self.alpha.setSingleStep(0.05)
-        self.btn_add = QPushButton("+ stop")
-        self.btn_remove = QPushButton("− stop")
-        row.addWidget(QLabel("Position"))
+        self.btn_add = QPushButton(tr("+ stop"))
+        self.btn_remove = QPushButton(tr("− stop"))
+        row.addWidget(QLabel(tr("Position")))
         row.addWidget(self.pos)
-        row.addWidget(QLabel("Alpha"))
+        row.addWidget(QLabel(tr("Alpha")))
         row.addWidget(self.alpha)
         row.addStretch(1)
         row.addWidget(self.btn_add)
@@ -205,17 +206,17 @@ class GradientEditor(QDialog):
         form = QFormLayout()
         self.space = QComboBox()
         self.space.addItems(list(SPACES))
-        self.space.setToolTip("Interpolation colour space between stops")
-        self.cyclic = QCheckBox("Cyclic (wraps for Plasma / phase)")
-        form.addRow("Interpolate in", self.space)
+        self.space.setToolTip(tr("Interpolation colour space between stops"))
+        self.cyclic = QCheckBox(tr("Cyclic (wraps for Plasma / phase)"))
+        form.addRow(tr("Interpolate in"), self.space)
         form.addRow(self.cyclic)
         left.addLayout(form)
         tools = QHBoxLayout()
-        self.btn_reverse = QPushButton("Reverse")
-        self.btn_distribute = QPushButton("Distribute")
+        self.btn_reverse = QPushButton(tr("Reverse"))
+        self.btn_distribute = QPushButton(tr("Distribute"))
         self.scheme = QComboBox()
         self.scheme.addItems(list(SCHEMES))
-        self.btn_random = QPushButton("🎲 Random")
+        self.btn_random = QPushButton(tr("🎲 Random"))
         for w in (self.btn_reverse, self.btn_distribute, self.scheme, self.btn_random):
             tools.addWidget(w)
         left.addLayout(tools)
@@ -223,18 +224,18 @@ class GradientEditor(QDialog):
 
         # ── right: library ─────────────────────────────────────────────────────
         right = QVBoxLayout()
-        right.addWidget(QLabel("Library"))
+        right.addWidget(QLabel(tr("Library")))
         self.library = _PaletteList()
         self.library.setIconSize(self.library.iconSize())
         right.addWidget(self.library, 1)
         lb = QHBoxLayout()
-        self.btn_save = QPushButton("Save as…")
-        self.btn_import = QPushButton("Import…")
-        self.btn_export = QPushButton("Export…")
+        self.btn_save = QPushButton(tr("Save as…"))
+        self.btn_import = QPushButton(tr("Import…"))
+        self.btn_export = QPushButton(tr("Export…"))
         for b in (self.btn_save, self.btn_import, self.btn_export):
             lb.addWidget(b)
         right.addLayout(lb)
-        self.btn_close = QPushButton("Close")
+        self.btn_close = QPushButton(tr("Close"))
         right.addWidget(self.btn_close)
         lay.addLayout(right, 2)
 
@@ -355,7 +356,7 @@ class GradientEditor(QDialog):
         self._emit(g, final=True)
 
     def _save(self) -> None:
-        name, ok = QInputDialog.getText(self, "Save palette", "Name:", text=self.bar.gradient.name)
+        name, ok = QInputDialog.getText(self, tr("Save palette"), tr("Name:"), text=self.bar.gradient.name)
         if not ok or not name.strip():
             return
         pid = name.strip().lower().replace(" ", "_")
@@ -365,7 +366,7 @@ class GradientEditor(QDialog):
         self._emit(g, final=True)
 
     def _import(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, "Import gradient", "", "Gradients (*.ggr *.json)")
+        path, _ = QFileDialog.getOpenFileName(self, tr("Import gradient"), "", "Gradients (*.ggr *.json)")
         if not path:
             return
         try:
@@ -378,13 +379,13 @@ class GradientEditor(QDialog):
 
                 g = Gradient.from_dict(json.loads(Path(path).read_text(encoding="utf-8")))
         except Exception as exc:  # noqa: BLE001
-            QMessageBox.warning(self, "Import gradient", str(exc))
+            QMessageBox.warning(self, tr("Import gradient"), str(exc))
             return
         self.set_gradient(g)
         self._emit(g, final=True)
 
     def _export(self) -> None:
-        path, _ = QFileDialog.getSaveFileName(self, "Export gradient", f"{self.bar.gradient.name}.ggr", "GIMP gradient (*.ggr);;JSON (*.json)")
+        path, _ = QFileDialog.getSaveFileName(self, tr("Export gradient"), f"{self.bar.gradient.name}.ggr", "GIMP gradient (*.ggr);;JSON (*.json)")
         if not path:
             return
         if path.lower().endswith(".ggr"):

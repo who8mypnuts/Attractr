@@ -120,6 +120,10 @@ def program_to_source(prog: Program) -> str:
             lines.append("}")
         else:
             lines.append(statement_to_source(stmt))
+    if prog.on_section:
+        lines.append("on_section {")
+        lines.extend("  " + statement_to_source(a) for a in prog.on_section)
+        lines.append("}")
     return "\n".join(lines) + "\n"
 
 
@@ -133,4 +137,7 @@ def formula_lines(prog: Program) -> list[str]:
                 out.extend("    " + statement_to_source(a, True) for a in br.body)
         else:
             out.append(statement_to_source(stmt, True))
+    if prog.on_section:
+        out.append("at each section crossing:")
+        out.extend("    " + statement_to_source(a, True) for a in prog.on_section)
     return out

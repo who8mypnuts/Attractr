@@ -22,6 +22,7 @@ from attractr.core.formula.lexer import FormulaError
 from attractr.gui.state.document import Document
 from attractr.gui.widgets.formula_editor.code_editor import CodeEditor
 from attractr.gui.widgets.formula_editor.highlighter import FormulaHighlighter
+from attractr.i18n import tr
 
 TEMPLATES = {
     "Map (2-D)": "name: My Map\nkind: map\ndims: 2\n\nparam a = 1.4 [-3, 3]\nparam b = 0.3 [-1, 1]\n\nx' = 1 - a*x^2 + y\ny' = b*x\n",
@@ -30,6 +31,8 @@ TEMPLATES = {
     "IFS (chaos game)": "name: My IFS\nkind: ifs\nic: 0 0 0\n\nparam s = 0.5 [0.3, 0.7]\n\nchoose {\n  1: x' = s*x;          y' = s*y\n  1: x' = s*x + (1-s);  y' = s*y\n  1: x' = s*x + (1-s)/2; y' = s*y + (1-s)\n}\n",
     "Driven oscillator (w = time)": "name: My Driven Oscillator\nkind: flow\ndt: 0.01\nic: 0.1 0 0 0\n\nparam delta = 0.3 [0, 1]\nparam gamma = 0.5 [0, 1]\nparam omega = 1.2 [0.5, 2]\n\ndx = y\ndy = x - x^3 - delta*y + gamma*cos(omega*w)\ndz = 0\ndw = 1\nplot = x, y, 0\n",
     "Poincare section": "name: My Section\nkind: flow\ndt: 0.01\nic: 0.1 0 0 0\n\nparam delta = 0.3 [0, 1]\nparam gamma = 0.5 [0, 1]\nparam omega = 1.2 [0.5, 2]\n\ndx = y\ndy = x - x^3 - delta*y + gamma*cos(omega*w)\ndz = 0\ndw = 1\nplot = x, y, 0\n# plot once per forcing period (sign change of the section function)\nsection = sin(omega*w/2)\n",
+    "Return map (on_section)": "name: My Return Map\nkind: flow\ndt: 0.005\nic: 0.1 0 0 0\nboost: 40\nsection_dir: down\n\nparam sigma = 10 [0, 20]\nparam rho = 28 [0, 50]\nparam beta = 8/3 [0, 5]\n\ndx = sigma*(y - x)\ndy = x*(rho - z) - y\ndz = x*y - beta*z\ndw = 0\n# successive maxima of z: plot (previous max, this max)\nplot = w, z, 0\nsection = x*y - beta*z\non_section { w' = z }\n",
+    "Escape-time (Buddhabrot)": "name: My Buddhabrot\nkind: escape\ndims: 2\nregion: -2.2 1.2 -1.7 1.7\nbailout: 2\nmax_iter: 500\nmin_iter: 20\nboost: 20\ncamera: 0 0 -90 1\n\n# x0, y0 = the random start point c of the current orbit; only escaping orbits are drawn\nx' = x*x - y*y + x0\ny' = 2*x*y + y0\ncolor = w   # w = escape count during replay\n",
     "Symmetric icon": "name: My Icon\nkind: map\n\nparam lam = -2.5 [-4, -1]\nparam al = 5.0 [1, 8]\nparam be = -1.8 [-3, 0.5]\nparam ga = 1.0 [-2, 2]\nparam om = 0.0 [-1, 1]\nparam n = 3 [3, 12] int\n\nzz  = x*x + y*y\nren = re_pow(x, y, n)\nt   = lam + al*zz + be*ren\ncr  = re_pow(x, -y, n - 1)\nci  = im_pow(x, -y, n - 1)\nx'  = t*x - om*y + ga*cr\ny'  = t*y + om*x + ga*ci\ndepth = ren\n",
 }
 
@@ -72,24 +75,24 @@ class FormulaPanel(QWidget):
 
         bar = QHBoxLayout()
         self.btn_new = QToolButton()
-        self.btn_new.setText("New ▾")
+        self.btn_new.setText(tr("New ▾"))
         self.btn_new.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         menu = QMenu(self.btn_new)
         for name, src in TEMPLATES.items():
             menu.addAction(name, lambda s=src: self._load_text(s, apply=True))
         self.btn_new.setMenu(menu)
-        self.btn_fork = QPushButton("Fork current")
-        self.btn_fork.setToolTip("Copy the current attractor's definition into the editor as a new user formula")
-        self.auto = QCheckBox("Apply live")
+        self.btn_fork = QPushButton(tr("Fork current"))
+        self.btn_fork.setToolTip(tr("Copy the current attractor's definition into the editor as a new user formula"))
+        self.auto = QCheckBox(tr("Apply live"))
         self.auto.setChecked(True)
-        self.btn_apply = QPushButton("Apply")
-        self.btn_save = QPushButton("Save to My Attractors")
-        self.btn_revert = QPushButton("Revert")
+        self.btn_apply = QPushButton(tr("Apply"))
+        self.btn_save = QPushButton(tr("Save to My Attractors"))
+        self.btn_revert = QPushButton(tr("Revert"))
         for w in (self.btn_new, self.btn_fork, self.auto, self.btn_apply, self.btn_save, self.btn_revert):
             bar.addWidget(w)
         bar.addStretch(1)
-        self.btn_popout = QPushButton("⤢ Enlarge")
-        self.btn_popout.setToolTip("Float the editor in a large window (click again to dock it back)")
+        self.btn_popout = QPushButton(tr("⤢ Enlarge"))
+        self.btn_popout.setToolTip(tr("Float the editor in a large window (click again to dock it back)"))
         self.btn_popout.clicked.connect(self.popOutRequested)
         bar.addWidget(self.btn_popout)
         lay.addLayout(bar)
@@ -208,9 +211,9 @@ class FormulaPanel(QWidget):
         try:
             spec = spec_from_source(text, builtin=False)
         except FormulaError as exc:
-            QMessageBox.warning(self, "Save attractor", str(exc))
+            QMessageBox.warning(self, tr("Save attractor"), str(exc))
             return
-        name, ok = QInputDialog.getText(self, "Save to My Attractors", "File name (id):", text=spec.id)
+        name, ok = QInputDialog.getText(self, tr("Save to My Attractors"), tr("File name (id):"), text=spec.id)
         if not ok or not name.strip():
             return
         saved = registry.save_user(text, name.strip())

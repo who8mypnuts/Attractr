@@ -37,7 +37,7 @@ class CodeEditor(QPlainTextEdit):
         self.updateRequest.connect(self._update_gutter)
         self.cursorPositionChanged.connect(self._refresh_extras)
         self.setViewportMargins(self.gutter_width(), 0, 0, 0)
-        words = sorted(set(FUNCTIONS) | {"param", "choose", "select", "depth", "color", "plot", "section", "x'", "y'", "z'", "w'", "dx", "dy", "dz", "dw"})
+        words = sorted(set(FUNCTIONS) | {"param", "choose", "on_section", "select", "depth", "color", "plot", "section", "x'", "y'", "z'", "w'", "dx", "dy", "dz", "dw"})
         self.completer = QCompleter(words, self)
         self.completer.setWidget(self)
         self.completer.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
@@ -49,7 +49,7 @@ class CodeEditor(QPlainTextEdit):
     def set_completion_words(self, extra: set[str]) -> None:
         from PySide6.QtCore import QStringListModel
 
-        words = sorted(set(FUNCTIONS) | extra | {"param", "choose", "select", "depth", "color", "plot", "section", "dx", "dy", "dz", "dw"})
+        words = sorted(set(FUNCTIONS) | extra | {"param", "choose", "on_section", "select", "depth", "color", "plot", "section", "dx", "dy", "dz", "dw"})
         self.completer.setModel(QStringListModel(words, self.completer))
 
     def _word_under_cursor(self) -> str:

@@ -40,6 +40,10 @@ class InfoPanel(QWidget):
             extra.append("4 state variables")
         if spec.analysis.has_section:
             extra.append("Poincaré section")
+        if spec.analysis.has_event:
+            extra.append("section events")
+        if spec.is_escape:
+            extra.append(f"escape-time: region {spec.region[:4]}, bailout {spec.bailout:g}, {spec.min_iter}–{spec.max_iter} iterations")
         doc = f"""
         <h2 style='color:#4fc3f7;margin-bottom:2px'>{html.escape(spec.name)}</h2>
         <p style='color:#888;margin-top:0'>{spec.kind} · {spec.dims}-D · {html.escape(spec.family)}{' · ' + ' · '.join(extra) if extra else ''}</p>

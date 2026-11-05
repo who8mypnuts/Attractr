@@ -10,6 +10,7 @@ from attractr.core.render.camera import FIT_MODES
 from attractr.core.render.settings import RenderSettings
 from attractr.gui.state.document import Document
 from attractr.gui.widgets.slider_spin import SliderSpin
+from attractr.i18n import tr
 
 
 class CameraPanel(QWidget):
@@ -35,14 +36,14 @@ class CameraPanel(QWidget):
         form.setContentsMargins(0, 4, 0, 0)
         self.fit = QComboBox()
         self.fit.addItems(list(FIT_MODES))
-        self.fit.setToolTip("bbox: tight 2-D fit for stills · sphere: rotation-invariant framing for animations")
-        form.addRow("Framing", self.fit)
+        self.fit.setToolTip(tr("bbox: tight 2-D fit for stills · sphere: rotation-invariant framing for animations"))
+        form.addRow(tr("Framing"), self.fit)
         lay.addLayout(form)
         btns = QHBoxLayout()
-        self.btn_reset = QPushButton("Reset camera")
-        self.btn_front = QPushButton("Front")
-        self.btn_top = QPushButton("Top")
-        self.btn_side = QPushButton("Side")
+        self.btn_reset = QPushButton(tr("Reset camera"))
+        self.btn_front = QPushButton(tr("Front"))
+        self.btn_top = QPushButton(tr("Top"))
+        self.btn_side = QPushButton(tr("Side"))
         for b in (self.btn_reset, self.btn_front, self.btn_top, self.btn_side):
             btns.addWidget(b)
         lay.addLayout(btns)

@@ -20,6 +20,7 @@ class Project:
     animation: dict[str, Any] | None = None  # timeline (see core/animation/timeline.py)
     notes: str = ""
     path: Path | None = None
+    history: dict[str, dict[str, list[float]]] = field(default_factory=dict)  # attractor id → param → recent values
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -29,13 +30,15 @@ class Project:
             "settings": self.settings.to_dict(),
             "animation": self.animation,
             "notes": self.notes,
+            "history": self.history,
         }
 
     @staticmethod
     def from_dict(d: dict[str, Any], path: Path | None = None) -> Project:
         if d.get("schema", 1) > SCHEMA:
             raise ValueError(f"project schema {d['schema']} is newer than this Attractr ({SCHEMA})")
-        return Project(RenderSettings.from_dict(d["settings"]), d.get("animation"), d.get("notes", ""), path)
+        return Project(RenderSettings.from_dict(d["settings"]), d.get("animation"), d.get("notes", ""), path,
+                       {k: {n: [float(x) for x in v] for n, v in pv.items()} for k, pv in d.get("history", {}).items()})
 
 
 def save_project(project: Project, path: str | Path) -> Path:

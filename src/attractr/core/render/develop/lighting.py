@@ -21,6 +21,7 @@ def _blur3(a: np.ndarray) -> np.ndarray:
 def height_field(zmin: np.ndarray, mask: np.ndarray, pixels_per_unit: float) -> np.ndarray:
     """Nearest-surface height in *pixel units* (near = high), holes filled with the
     minimum so edges slope down to the background."""
+    mask = mask & np.isfinite(zmin)  # an inverted look marks empty pixels as "surface"; they have no depth
     h = np.where(mask, -zmin, np.nan).astype(np.float32)
     fill = np.nanmin(h) if mask.any() else 0.0
     h = np.where(mask, h, fill)

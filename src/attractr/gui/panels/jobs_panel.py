@@ -13,6 +13,7 @@ from attractr.core.jobs.queue import JobQueue
 from attractr.core.render.result import RenderResult
 from attractr.core.render.thumb import shrink_result
 from attractr.gui.controllers.develop_controller import DevelopController
+from attractr.i18n import tr
 
 THUMB = 112
 
@@ -37,15 +38,15 @@ class JobRow(QWidget):
         self.eta.setMinimumWidth(70)
         self.btn_finish = QPushButton("⏹")
         self.btn_finish.setFixedWidth(28)
-        self.btn_finish.setToolTip("Finish now — stop accumulating and save what has been rendered so far")
+        self.btn_finish.setToolTip(tr("Finish now — stop accumulating and save what has been rendered so far"))
         self.btn_finish.setVisible(hasattr(job, "finish_now"))
         self.btn_ckpt = QPushButton("💾")
         self.btn_ckpt.setFixedWidth(28)
-        self.btn_ckpt.setToolTip("Write a checkpoint now (Render → Resume from checkpoint… continues it later)")
+        self.btn_ckpt.setToolTip(tr("Write a checkpoint now (Render → Resume from checkpoint… continues it later)"))
         self.btn_ckpt.setVisible(hasattr(job, "checkpoint_now"))
         self.btn = QPushButton("✕")
         self.btn.setFixedWidth(28)
-        self.btn.setToolTip("Cancel")
+        self.btn.setToolTip(tr("Cancel"))
         lay.addWidget(self.thumb)
         lay.addWidget(self.label)
         lay.addWidget(self.bar, 1)
@@ -64,7 +65,7 @@ class JobRow(QWidget):
     def _finish(self) -> None:
         self.job.finish_now()
         self.btn_finish.setEnabled(False)
-        self.bar.setFormat("finishing…")
+        self.bar.setFormat(tr("finishing…"))
 
     def on_progress(self, p: Progress) -> None:
         self.bar.setValue(int(p.fraction * 1000))
@@ -91,7 +92,7 @@ class JobRow(QWidget):
         ck = getattr(self.job, "checkpoint_file", None)
         if state == "cancelled" and ck is not None and ck.exists():
             self.label.setToolTip(f"checkpoint kept: {ck}")
-            self.bar.setFormat("cancelled · checkpoint kept")
+            self.bar.setFormat(tr("cancelled · checkpoint kept"))
 
 
 class JobsPanel(QWidget):
@@ -111,8 +112,8 @@ class JobsPanel(QWidget):
         scroll.setWidget(body)
         outer.addWidget(scroll)
         btns = QHBoxLayout()
-        self.btn_clear = QPushButton("Clear finished")
-        self.btn_cancel_all = QPushButton("Cancel all")
+        self.btn_clear = QPushButton(tr("Clear finished"))
+        self.btn_cancel_all = QPushButton(tr("Cancel all"))
         btns.addWidget(self.btn_clear)
         btns.addWidget(self.btn_cancel_all)
         outer.addLayout(btns)

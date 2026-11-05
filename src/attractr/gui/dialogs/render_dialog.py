@@ -28,6 +28,7 @@ from attractr.core.project.render_presets import RenderPreset, render_presets
 from attractr.core.render.engines import selector
 from attractr.core.render.settings import REPORT_FORMATS, RenderSettings
 from attractr.gui.controllers.render_job import RenderJob
+from attractr.i18n import tr
 
 SIZE_PRESETS = [
     ("Preview 768²", 768, 768), ("HD 1920×1080", 1920, 1080), ("Square 2048²", 2048, 2048),
@@ -45,26 +46,26 @@ class RenderDialog(QDialog):
 
     def __init__(self, get_settings, parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Render")
+        self.setWindowTitle(tr("Render"))
         self.setModal(False)
         self.get_settings = get_settings
         self.qs = QSettings()
         lay = QVBoxLayout(self)
 
         # render presets (named recipes for everything below)
-        g = QGroupBox("Render preset")
+        g = QGroupBox(tr("Render preset"))
         row = QHBoxLayout(g)
         self.preset = QComboBox()
-        self.preset.setToolTip("Named output recipes: size, quality, engine, format and report. Also used by Batch render and `attractr batch`.")
-        self.btn_preset_save = QPushButton("Save as…")
-        self.btn_preset_del = QPushButton("Delete")
+        self.preset.setToolTip(tr("Named output recipes: size, quality, engine, format and report. Also used by Batch render and `attractr batch`."))
+        self.btn_preset_save = QPushButton(tr("Save as…"))
+        self.btn_preset_del = QPushButton(tr("Delete"))
         row.addWidget(self.preset, 1)
         row.addWidget(self.btn_preset_save)
         row.addWidget(self.btn_preset_del)
         lay.addWidget(g)
 
         # size
-        g = QGroupBox("Output size")
+        g = QGroupBox(tr("Output size"))
         f = QFormLayout(g)
         self.size_preset = QComboBox()
         for name, w, h in SIZE_PRESETS:
@@ -75,14 +76,14 @@ class RenderDialog(QDialog):
         self.height.setRange(16, 32768)
         row = QHBoxLayout()
         row.addWidget(self.width)
-        row.addWidget(QLabel("×"))
+        row.addWidget(QLabel(tr("×")))
         row.addWidget(self.height)
-        f.addRow("Preset", self.size_preset)
-        f.addRow("Pixels", row)
+        f.addRow(tr("Preset"), self.size_preset)
+        f.addRow(tr("Pixels"), row)
         lay.addWidget(g)
 
         # quality
-        g = QGroupBox("Quality")
+        g = QGroupBox(tr("Quality"))
         f = QFormLayout(g)
         self.tier = QComboBox()
         for name, ppp in QUALITY_TIERS:
@@ -95,31 +96,31 @@ class RenderDialog(QDialog):
         self.hint_label.setStyleSheet("color:#e0a040")
         self.hint_label.setWordWrap(True)
         self.engine = QComboBox()
-        self.engine.addItem("auto (best available)", "auto")
+        self.engine.addItem(tr("auto (best available)"), "auto")
         for eid in selector.engine_ids():
             self.engine.addItem(eid, eid)
         self.precision = QComboBox()
-        self.precision.addItem("auto (fp32)", "auto")
-        self.precision.addItem("fp32", "fp32")
-        self.precision.addItem("fp64 — double precision trajectories (GPU: needs fp64 support, slower)", "fp64")
+        self.precision.addItem(tr("auto (fp32)"), "auto")
+        self.precision.addItem(tr("fp32"), "fp32")
+        self.precision.addItem(tr("fp64 — double precision trajectories (GPU: needs fp64 support, slower)"), "fp64")
         self.ss = QSpinBox()
         self.ss.setRange(1, 4)
-        self.ss.setToolTip("Supersampling: accumulate at N× resolution and box-filter down")
+        self.ss.setToolTip(tr("Supersampling: accumulate at N× resolution and box-filter down"))
         self.splat = QSpinBox()
         self.splat.setRange(0, 4)
-        self.splat.setToolTip("0 = bilinear anti-aliased sub-pixel splat; 1–4 = soft disk radius")
-        f.addRow("Tier", self.tier)
-        f.addRow("Points / pixel", self.ppp)
+        self.splat.setToolTip(tr("0 = bilinear anti-aliased sub-pixel splat; 1–4 = soft disk radius"))
+        f.addRow(tr("Tier"), self.tier)
+        f.addRow(tr("Points / pixel"), self.ppp)
         f.addRow("", self.points_label)
         f.addRow("", self.hint_label)
-        f.addRow("Engine", self.engine)
-        f.addRow("Precision", self.precision)
-        f.addRow("Supersampling", self.ss)
-        f.addRow("Splat radius", self.splat)
+        f.addRow(tr("Engine"), self.engine)
+        f.addRow(tr("Precision"), self.precision)
+        f.addRow(tr("Supersampling"), self.ss)
+        f.addRow(tr("Splat radius"), self.splat)
         lay.addWidget(g)
 
         # output
-        g = QGroupBox("Output")
+        g = QGroupBox(tr("Output"))
         f = QFormLayout(g)
         row = QHBoxLayout()
         self.folder = QLineEdit(self.qs.value("render/folder", str(Path.home() / "Attractr")))
@@ -128,39 +129,39 @@ class RenderDialog(QDialog):
         row.addWidget(self.folder, 1)
         row.addWidget(self.btn_folder)
         self.template = QLineEdit(self.qs.value("render/template", DEFAULT_TEMPLATE))
-        self.template.setToolTip("Fields: {name} {date} {time} {datetime} {w} {h} {seed} {style} {ppp}")
+        self.template.setToolTip(tr("Fields: {name} {date} {time} {datetime} {w} {h} {seed} {style} {ppp}"))
         self.fmt = QComboBox()
         self.fmt.addItems(["png", "jpg", "webp", "tif"])
         self.bits = QComboBox()
         self.bits.addItems(["8", "16"])
-        self.bits.setToolTip("16-bit applies to PNG only")
-        f.addRow("Folder", row)
-        f.addRow("Name template", self.template)
-        f.addRow("Format", self.fmt)
-        f.addRow("Bit depth", self.bits)
+        self.bits.setToolTip(tr("16-bit applies to PNG only"))
+        f.addRow(tr("Folder"), row)
+        f.addRow(tr("Name template"), self.template)
+        f.addRow(tr("Format"), self.fmt)
+        f.addRow(tr("Bit depth"), self.bits)
         lay.addWidget(g)
 
         # report
-        g = QGroupBox("Render report")
+        g = QGroupBox(tr("Render report"))
         f = QFormLayout(g)
-        self.report_on = QCheckBox("Write a render report next to the image")
+        self.report_on = QCheckBox(tr("Write a render report next to the image"))
         self.report_on.setChecked(self.qs.value("render/report", "true") == "true")
         self.report_fmt = QComboBox()
         for k in REPORT_FORMATS:
             self.report_fmt.addItem(REPORT_LABELS[k], k)
         self.report_fmt.setCurrentIndex(max(0, list(REPORT_FORMATS).index(self.qs.value("render/report_fmt", "md"))))
-        self.report_dyn = QCheckBox("Include dynamics (Lyapunov exponent, dimension)")
+        self.report_dyn = QCheckBox(tr("Include dynamics (Lyapunov exponent, dimension)"))
         f.addRow(self.report_on)
-        f.addRow("Format", self.report_fmt)
+        f.addRow(tr("Format"), self.report_fmt)
         f.addRow(self.report_dyn)
         lay.addWidget(g)
 
         btns = QHBoxLayout()
         self.estimate = QLabel("")
         self.estimate.setStyleSheet("color:#999")
-        self.btn_render = QPushButton("▶ Render")
+        self.btn_render = QPushButton(tr("▶ Render"))
         self.btn_render.setDefault(True)
-        self.btn_close = QPushButton("Close")
+        self.btn_close = QPushButton(tr("Close"))
         btns.addWidget(self.estimate, 1)
         btns.addWidget(self.btn_render)
         btns.addWidget(self.btn_close)
@@ -194,7 +195,7 @@ class RenderDialog(QDialog):
     # ── render presets ─────────────────────────────────────────────────────────
     def _fill_render_presets(self) -> None:
         self.preset.clear()
-        self.preset.addItem("— current settings —", None)
+        self.preset.addItem(tr("— current settings —"), None)
         for p in render_presets.all():
             self.preset.addItem(p.name + ("" if p.builtin else " (user)"), p.name)
             self.preset.setItemData(self.preset.count() - 1, p.summary, 3)  # Qt.ToolTipRole
@@ -232,7 +233,7 @@ class RenderDialog(QDialog):
             self.btn_preset_del.setEnabled(not render_presets.get(name).builtin)
 
     def _save_render_preset(self) -> None:
-        name, ok = QInputDialog.getText(self, "Save render preset", "Name:", text=f"{self.width.value()}×{self.height.value()} {self.ppp.value():g} ppp")
+        name, ok = QInputDialog.getText(self, tr("Save render preset"), tr("Name:"), text=f"{self.width.value()}×{self.height.value()} {self.ppp.value():g} ppp")
         if not ok or not name.strip():
             return
         render_presets.save(self.current_preset(name.strip()))
@@ -306,7 +307,7 @@ class RenderDialog(QDialog):
         self._update_estimate()
 
     def _pick_folder(self) -> None:
-        d = QFileDialog.getExistingDirectory(self, "Output folder", self.folder.text())
+        d = QFileDialog.getExistingDirectory(self, tr("Output folder"), self.folder.text())
         if d:
             self.folder.setText(d)
 

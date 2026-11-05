@@ -86,7 +86,7 @@ class PreviewWorker(QThread):
     def _render(self, req: PreviewRequest, cancel: CancelToken) -> None:
         settings = req.settings
         spec = resolve_spec(settings)
-        engine = selector.select("cpu" if self._fallback_cpu else self._engine_pref, "preview")
+        engine = selector.select("cpu" if self._fallback_cpu else self._engine_pref, "preview", spec)
         self.engineChanged.emit(engine.id)
         last_emit = [0.0]
 

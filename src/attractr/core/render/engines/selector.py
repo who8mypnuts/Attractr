@@ -52,16 +52,21 @@ def probe_all() -> dict[str, EngineCaps]:
     return {eid: probe(eid) for eid in _factories}
 
 
-def select(engine_id: str = "auto", purpose: str = "final") -> Engine:
-    """Resolve ``auto`` to the best available engine for ``purpose`` (preview|final)."""
+def select(engine_id: str = "auto", purpose: str = "final", spec=None) -> Engine:
+    """Resolve ``auto`` to the best available engine for ``purpose`` (preview|final) that
+    supports ``spec`` (an explicit engine that cannot run the program falls back too)."""
     if engine_id != "auto":
         caps = probe(engine_id)
         if caps.available:
-            return get_engine(engine_id)
-        log.warning("engine %s not available (%s); falling back", engine_id, "; ".join(caps.notes))
+            eng = get_engine(engine_id)
+            if spec is None or eng.supports(spec):
+                return eng
+            log.warning("engine %s cannot run %s; falling back", engine_id, spec.id)
+        else:
+            log.warning("engine %s not available (%s); falling back", engine_id, "; ".join(caps.notes))
     order = PREVIEW_ORDER if purpose == "preview" else FINAL_ORDER
     for eid in order:
-        if eid in _factories and probe(eid).available:
+        if eid in _factories and probe(eid).available and (spec is None or get_engine(eid).supports(spec)):
             return get_engine(eid)
     return get_engine("cpu")
 

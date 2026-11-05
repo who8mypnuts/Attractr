@@ -45,6 +45,7 @@ def install_translators(app, locale: str | None = None) -> list[str]:
     overridable with ``ATTRACTR_LANG``). Returns the names of the files loaded."""
     from PySide6.QtCore import QLibraryInfo, QLocale, QTranslator
 
+    remove_translators(app)
     name = locale or os.environ.get("ATTRACTR_LANG") or QLocale.system().name()  # e.g. "de_DE"
     loaded: list[str] = []
     candidates = [name, name.split("_")[0]]
@@ -67,3 +68,10 @@ def install_translators(app, locale: str | None = None) -> list[str]:
     if loaded:
         log.info("translations: %s", ", ".join(loaded))
     return loaded
+
+
+def remove_translators(app) -> None:
+    """Uninstall every translator added by :func:`install_translators` (back to English)."""
+    for t in _translators:
+        app.removeTranslator(t)
+    _translators.clear()

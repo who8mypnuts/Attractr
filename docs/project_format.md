@@ -32,3 +32,5 @@ user files in `~/.attractr/attractors/`.
 ## Image metadata
 
 PNG `tEXt` chunks `attractr:settings` (JSON), `attractr:code` (ATR1), `attractr:version`.
+
+`history` (schema ≥ 1, optional): `{attractor_id: {param: [recent values…]}}` — the *Recent values* list of every parameter slider, so a good value found by accident survives the session.

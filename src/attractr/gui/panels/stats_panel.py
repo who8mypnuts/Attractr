@@ -8,6 +8,7 @@ from PySide6.QtWidgets import QLabel, QPushButton, QTableWidget, QTableWidgetIte
 from attractr.core.render.result import RenderResult
 from attractr.gui.state.document import Document
 from attractr.gui.widgets.histogram_widget import HistogramWidget
+from attractr.i18n import tr
 
 
 def _table(rows: list[tuple[str, str]]) -> QTableWidget:
@@ -83,7 +84,7 @@ class StatsPanel(QWidget):
         self.render_table = _table([])
         self.hist = HistogramWidget()
         v.addWidget(self.render_table, 1)
-        v.addWidget(QLabel("Density histogram (log-spaced bins) · tone curve"))
+        v.addWidget(QLabel(tr("Density histogram (log-spaced bins) · tone curve")))
         v.addWidget(self.hist)
         self.tabs.addTab(w, "Render")
 
@@ -91,7 +92,7 @@ class StatsPanel(QWidget):
         w = QWidget()
         v = QVBoxLayout(w)
         self.dyn_table = _table([("λ₁", "press Compute")])
-        self.btn_dyn = QPushButton("Compute Lyapunov exponent & dimension")
+        self.btn_dyn = QPushButton(tr("Compute Lyapunov exponent & dimension"))
         v.addWidget(self.dyn_table, 1)
         v.addWidget(self.btn_dyn)
         self.tabs.addTab(w, "Dynamics")
@@ -103,7 +104,7 @@ class StatsPanel(QWidget):
         w = QWidget()
         v = QVBoxLayout(w)
         self.sys_table = _table([("probing…", "")])
-        self.btn_probe = QPushButton("Re-probe engines")
+        self.btn_probe = QPushButton(tr("Re-probe engines"))
         v.addWidget(self.sys_table, 1)
         v.addWidget(self.btn_probe)
         self.tabs.addTab(w, "System")

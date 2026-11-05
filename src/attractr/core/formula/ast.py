@@ -119,6 +119,14 @@ class Program:
     header: dict[str, str] = field(default_factory=dict)
     params: tuple[ParamDecl, ...] = ()
     body: tuple[Stmt, ...] = ()
+    # ``on_section { … }``: assignments to x'/y'/z'/w' (and temporaries) applied to the state
+    # right after a point has been plotted at a Poincaré-section crossing (return maps)
+    on_section: tuple[Assign, ...] = ()
+
+    @property
+    def section_dir(self) -> int:
+        """0 = plot on every sign change of ``section``, 1 = only upward (− → +), 2 = only downward."""
+        return {"both": 0, "up": 1, "down": 2}[self.header.get("section_dir", "both").strip().lower()]
 
     @property
     def kind(self) -> str:

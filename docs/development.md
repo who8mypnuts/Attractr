@@ -91,11 +91,24 @@ Both are ordinary subprocesses of the same interpreter; they inherit `ATTRACTR_H
 
 ## Internationalisation
 
-Scaffolding only: `attractr/i18n.py` provides `tr()` (Qt `translate` in the `attractr`
-context, safe without a QApplication) and `install_translators()` (loads
-`resources/i18n/attractr_<locale>.qm` + Qt's `qtbase_<locale>.qm` for the system locale
-or `ATTRACTR_LANG`). Strings are **not yet wrapped** — when a translation is wanted, wrap
-the user-visible literals of a panel in `tr("…")`, run `pyside6-lupdate`, translate, and
-`pyside6-lrelease` (see `resources/i18n/README.md`). Attractor descriptions and parameter
-hints live in the `.atr` files and would need a parallel mechanism (per-locale `.atr`
-overlays) — deliberately left for later.
+`attractr/i18n.py` provides `tr()` (Qt `translate` in the `attractr` context, safe without
+a QApplication) and `install_translators()` (loads `resources/i18n/attractr_<locale>.qm` +
+Qt's `qtbase_<locale>.qm` for the system locale or `ATTRACTR_LANG`; `ATTRACTR_LANG=de
+attractr` runs the German UI). The GUI's user-visible literals (~275) are wrapped in
+`tr("…")`; f-strings with values (`f"Reset to {v:g}"`) are not.
+
+Workflow:
+
+1. `python tools/wrap_tr.py` — wraps new plain literals in widget constructors / setters /
+   dialogs (idempotent; `--check` lists what would change).
+2. `python tools/extract_ts.py de` — regenerates `resources/i18n/attractr_de.ts` with every
+   `tr()` string, keeping finished translations.
+3. Translate (Qt Linguist or any editor), then `pyside6-lrelease resources/i18n/attractr_de.ts`.
+
+Texts inside `.atr` files (descriptions, parameter hints) are translated through
+**overlays**: `resources/i18n/attractors_<locale>.json` (`{id: {"desc": …, "hints": {param:
+…}}}`), applied by the registry at load time (`core/attractors/overlays.py`);
+`python tools/extract_attractor_strings.py de` writes/updates the template with the
+English texts of untranslated attractors marked `"_todo": true`. German ships as a
+complete UI translation plus overlays for a handful of classics — a starting point, not a
+finished localisation.

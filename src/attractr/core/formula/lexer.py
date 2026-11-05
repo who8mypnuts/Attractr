@@ -12,7 +12,8 @@ from dataclasses import dataclass
 HEADER_KEYS = frozenset(
     {
         "name", "id", "kind", "dims", "desc", "ref", "author", "dt", "ic", "warmup",
-        "camera", "palette", "style", "tags", "version", "family", "lyapunov", "jitter", "boost",
+        "camera", "palette", "style", "tags", "version", "family", "lyapunov", "jitter", "boost", "section_dir",
+        "region", "bailout", "max_iter", "min_iter",
     }
 )
 

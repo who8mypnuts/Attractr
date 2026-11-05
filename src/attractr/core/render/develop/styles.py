@@ -129,14 +129,12 @@ def style_liquid(ctx: DevelopContext) -> tuple[np.ndarray, np.ndarray]:
 
 def style_solid(ctx: DevelopContext) -> tuple[np.ndarray, np.ndarray]:
     surf = ctx.density > ctx.look.solid_threshold
-    md = ctx.result.mean_depth()
     zmin = ctx.result.zmin
-    if zmin is not None and surf.any():
-        zv = zmin[surf]
+    zv = zmin[surf] if zmin is not None else np.empty(0)
+    zv = zv[np.isfinite(zv)]  # inverted looks count empty pixels (no depth) as surface
+    if zv.size:
         lo, hi = np.percentile(zv, [1.0, 99.0])
         t = 1.0 - np.clip((zmin - lo) / max(hi - lo, 1e-9), 0, 1)  # near = 1
-    elif md is not None:
-        t = ctx.density
     else:
         t = ctx.density
     rgba = sample_lut(ctx.lut, np.where(surf, 0.25 + 0.75 * t, 0.0).astype(np.float32))

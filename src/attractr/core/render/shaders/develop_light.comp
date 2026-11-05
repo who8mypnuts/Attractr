@@ -1,0 +1,172 @@
+#version 430
+// Liquid / Solid development on the GPU — mirrors core/render/develop/{styles,lighting}.py.
+// The image is processed in row chunks with a 2-row halo; u_pass selects the stage:
+//   0  fill scan : atomicMax of the surface height key over the masked pixels (whole image)
+//   1  height    : h_raw[i] = mask ? -zmin·ppu : fill·ppu              (chunk + halo 2)
+//   2  blur      : h_blur[i] = 3×3 binomial blur of h_raw               (chunk + halo 1)
+//   3  shade     : normals from central differences of h_blur, Phong, style, composite
+layout(local_size_x = 256) in;
+
+layout(std430, binding = 0) readonly buffer Count    { float count[]; };
+layout(std430, binding = 1) readonly buffer CvSum    { float cv_sum[]; };
+layout(std430, binding = 2) readonly buffer DepthSum { float depth_sum[]; };
+layout(std430, binding = 3) readonly buffer Lut      { vec4 lut[]; };
+layout(std430, binding = 4) writeonly buffer Out     { vec4 rgba[]; };
+layout(std430, binding = 5) readonly buffer Zmin     { float zmin[]; };
+layout(std430, binding = 6) buffer HRaw              { float h_raw[]; };
+layout(std430, binding = 7) buffer HBlur             { float h_blur[]; };
+layout(std430, binding = 8) buffer Fill              { uint fill_key; };
+
+uniform int   u_pass;
+uniform int   u_n;          // pixels in the buffers bound for this dispatch
+uniform int   u_width;
+uniform int   u_rows;       // rows in the bound chunk (incl. halo)
+uniform int   u_row0;       // image row of the chunk's first bound row
+uniform int   u_height;
+uniform int   u_core0;      // first row (within the chunk) that is written in pass 3
+uniform int   u_core_rows;
+uniform int   u_lut_n;
+uniform int   u_style;      // 4 liquid, 5 solid
+uniform int   u_flags;      // 1 has_cv, 2 has_depth, 4 invert, 8 transparent bg, 16 gradient bg, 32 has_zmin
+uniform float u_norm;
+uniform float u_gamma;
+uniform float u_brightness;
+uniform float u_contrast;
+uniform float u_depth_cue;
+uniform float u_threshold;  // solid threshold
+uniform float u_ppu;        // pixels per unit of depth (relief scale)
+uniform float u_fill;       // height assigned to empty pixels (pass 1)
+uniform vec2  u_cv_range;
+uniform vec2  u_depth_range;
+uniform vec2  u_zmin_range; // 1–99 % of zmin over the surface (solid palette index)
+uniform vec3  u_bg0;
+uniform vec3  u_bg1;
+uniform vec3  u_light_dir;
+uniform vec3  u_light_color;
+uniform vec4  u_light;      // ambient, diffuse, specular, shininess
+
+vec4 sample_lut(float t) {
+    int i = clamp(int(t * float(u_lut_n - 1) + 0.5), 0, u_lut_n - 1);
+    return lut[i];
+}
+
+float curve(float d) {
+    if (u_gamma != 1.0 && u_gamma > 0.0) d = pow(d, u_gamma);
+    d *= u_brightness;
+    if (u_contrast != 0.0) {
+        float k = clamp(u_contrast, -0.99, 0.99);
+        float x = d - 0.5;
+        d = 0.5 + x * (1.0 + k) / (1.0 + k * abs(x) * 2.0);
+    }
+    d = clamp(d, 0.0, 1.0);
+    if ((u_flags & 4) != 0) d = 1.0 - d;
+    return d;
+}
+
+float density(uint i, out bool inside) {
+    float c = count[i];
+    inside = c > 0.0;
+    float d = clamp(log(1.0 + c) / log(1.0 + u_norm), 0.0, 1.0);
+    d = curve(d);
+    if (!inside) d = ((u_flags & 4) != 0) ? 1.0 : 0.0;
+    return d;
+}
+
+bool surface(uint i, float d, bool inside) {
+    return u_style == 5 ? d > u_threshold : inside;
+}
+
+uint zkey(float z) {                 // monotonic float → uint (larger z → larger key)
+    uint k = floatBitsToUint(z);
+    return (k & 0x80000000u) != 0u ? ~k : (k | 0x80000000u);
+}
+
+float hb(int r, int c) {             // h_blur with edge clamping inside the bound chunk
+    r = clamp(r, 0, u_rows - 1);
+    c = clamp(c, 0, u_width - 1);
+    return h_blur[r * u_width + c];
+}
+
+float hr(int r, int c) {
+    r = clamp(r, 0, u_rows - 1);
+    c = clamp(c, 0, u_width - 1);
+    return h_raw[r * u_width + c];
+}
+
+void main() {
+    uint i = gl_GlobalInvocationID.x;
+    if (i >= uint(u_n)) return;
+    int row = int(i) / u_width, col = int(i) - row * u_width;
+    bool inside;
+    float d = density(i, inside);
+    bool surf = surface(i, d, inside);
+    if (u_pass < 3) surf = surf && zmin[i] < 1.0e38;   // lighting mask: needs a depth (see lighting.height_field)
+
+    if (u_pass == 0) {               // global fill = min over the surface of -zmin = -(max zmin)
+        if (surf) atomicMax(fill_key, zkey(zmin[i]));
+        return;
+    }
+    if (u_pass == 1) {
+        h_raw[i] = (surf ? -zmin[i] : u_fill) * u_ppu;
+        return;
+    }
+    if (u_pass == 2) {
+        float s = hr(row - 1, col - 1) + 2.0 * hr(row - 1, col) + hr(row - 1, col + 1)
+                + 2.0 * hr(row, col - 1) + 4.0 * hr(row, col) + 2.0 * hr(row, col + 1)
+                + hr(row + 1, col - 1) + 2.0 * hr(row + 1, col) + hr(row + 1, col + 1);
+        h_blur[i] = s / 16.0;
+        return;
+    }
+    // ── pass 3: shading + style + composite (core rows only) ─────────────────
+    if (row < u_core0 || row >= u_core0 + u_core_rows) return;
+    int img_row = u_row0 + row;
+    // np.gradient: central differences, one-sided at the image borders
+    float gx, gy;
+    if (col == 0)                gx = hb(row, 1) - hb(row, 0);
+    else if (col == u_width - 1) gx = hb(row, col) - hb(row, col - 1);
+    else                         gx = 0.5 * (hb(row, col + 1) - hb(row, col - 1));
+    if (img_row == 0)                 gy = hb(row + 1, col) - hb(row, col);
+    else if (img_row == u_height - 1) gy = hb(row, col) - hb(row - 1, col);
+    else                              gy = 0.5 * (hb(row + 1, col) - hb(row - 1, col));
+    vec3 n = normalize(vec3(-gx, -gy, 1.0));
+    float ndotl = clamp(dot(n, u_light_dir), 0.0, 1.0);
+    vec3 half_v = normalize(u_light_dir + vec3(0.0, 0.0, 1.0));
+    float spec = pow(clamp(dot(n, half_v), 0.0, 1.0), u_light.w) * u_light.z;
+    float diff = u_light.x + u_light.y * ndotl;
+
+    float c = count[i];
+    bool has_cv = (u_flags & 1) != 0, has_depth = (u_flags & 2) != 0, has_zmin = (u_flags & 32) != 0;
+    vec3 rgb; float a;
+    if (u_style == 4) {              // liquid
+        float strength = max(u_depth_cue, 0.3);
+        float df = 1.0;
+        if (has_depth && inside) {
+            float md = depth_sum[i] / max(c, 1e-30);
+            float dn = clamp((md - u_depth_range.x) / (u_depth_range.y - u_depth_range.x), 0.0, 1.0);
+            df = 1.0 - strength * 0.8 * dn;
+        }
+        float dd = d * df;
+        vec4 p = sample_lut(dd);
+        rgb = clamp(p.rgb * diff + spec * u_light_color, 0.0, 1.0);
+        a = clamp(dd * 2.0, 0.0, 1.0);
+    } else {                         // solid
+        float t = d;
+        if (has_zmin) t = 1.0 - clamp((zmin[i] - u_zmin_range.x) / max(u_zmin_range.y - u_zmin_range.x, 1e-9), 0.0, 1.0);
+        vec4 p = sample_lut(surf ? 0.25 + 0.75 * t : 0.0);
+        rgb = clamp(p.rgb * diff + spec * u_light_color, 0.0, 1.0);
+        float band = max(u_threshold * 0.5, 1e-3);
+        a = clamp((d - u_threshold + band) / band, 0.0, 1.0);
+    }
+    // ── background + compositing (same as develop.comp) ───────────────────────
+    vec3 bg = u_bg0;
+    float bga = 1.0;
+    if ((u_flags & 16) != 0) {
+        float tt = (u_height > 1) ? float(img_row) / float(u_height - 1) : 0.0;
+        bg = u_bg0 * (1.0 - tt) + u_bg1 * tt;
+    }
+    if ((u_flags & 8) != 0) { bg = vec3(0.0); bga = 0.0; }
+    vec3 outc = rgb * a + bg * (1.0 - a) * bga;
+    float outa = a + bga * (1.0 - a);
+    if ((u_flags & 8) != 0 && outa > 1e-6) outc /= outa;
+    rgba[(row - u_core0) * u_width + col] = clamp(vec4(outc, outa), 0.0, 1.0);
+}

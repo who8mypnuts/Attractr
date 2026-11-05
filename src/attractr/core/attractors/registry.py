@@ -29,7 +29,17 @@ class AttractorRegistry:
         if udir.exists():
             for path in sorted(udir.rglob("*.atr")):
                 self._load_file(path, builtin=False)
+        self._apply_locale_overlay()
         self._loaded = True
+
+    def _apply_locale_overlay(self) -> None:
+        """Translate descriptions / parameter hints when an overlay for the locale exists."""
+        from attractr.core.attractors.overlays import apply_overlay, load_overlay
+
+        overlay = load_overlay()
+        for sid, entry in overlay.items():
+            if sid in self._specs and isinstance(entry, dict):
+                self._specs[sid] = apply_overlay(self._specs[sid], entry)
 
     def _load_file(self, path: Path, builtin: bool) -> None:
         try:

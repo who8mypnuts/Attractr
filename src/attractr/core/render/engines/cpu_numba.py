@@ -63,6 +63,12 @@ def effective_camera(cam: Camera, framing: Framing) -> Camera:
                    pan_v=cam.pan_v + framing.fit_pan[1])
 
 
+def escape_config(spec: AttractorSpec) -> np.ndarray:
+    """Kernel constants for escape-time systems: region box, bailout², max_iter, min_iter."""
+    r = list(spec.region) + [0.0] * (6 - len(spec.region))
+    return np.array([*r[:6], float(spec.bailout) ** 2, float(spec.max_iter), float(spec.min_iter)], dtype=np.float64)
+
+
 def downsample(buf: np.ndarray, ss: int, mode: str) -> np.ndarray:
     if ss == 1:
         return buf
@@ -142,6 +148,7 @@ class CpuEngine(Engine):
         st = seed_from_points(n_traj, plan.seed, sample_pts, framing.radius * 1e-2)
         warmup = int(q.warmup) if q.warmup is not None else ACCUM_WARMUP
         ic = np.asarray(spec.ic, dtype=np.float64)
+        esc = escape_config(spec)
         kern = splat_kernel(q.splat_radius)
         gap_fill = 1 if (q.gap_fill and spec.plots_continuous) else 0
         stats.trajectories = n_traj
@@ -160,6 +167,7 @@ class CpuEngine(Engine):
                 R, center, inv_radius, cx, cy, focal, cam.perspective, Ws, Hs,
                 kern, gap_fill, needs.color_code, plot,
                 cnt, dep, zmn, cvb, restarts, plotted, ic, spec.jitter,
+                st.SX, st.SY, st.SZ, st.EMODE, st.ECNT, st.ENREP, esc,
             )
 
         def run(steps: int, t0: float, plot: int) -> None:

@@ -20,7 +20,7 @@ translate to GLSL. A Pratt parser for this grammar is ~300 lines.
 ```text
 # comments start with '#'
 name: Clifford                         # display name (required)
-kind: map                              # map | flow | ifs
+kind: map                              # map | flow | ifs | escape
 dims: 3                                # 2 or 3 (default 3)
 desc: A classic 2-D iterative map lifted into 3-D ...
 ref: https://paulbourke.net/fractals/clifford/
@@ -59,7 +59,8 @@ boosted budget).
 | `depth = expr` | optional: depth value for 2-D maps lifted into 3-D (Icon uses `Re(z^n)`) |
 | `color = expr` | optional: per-point colour driver (overrides the "Colour source" setting when present) |
 | `plot = ex, ey[, ez]` | optional: what is *drawn* instead of `(x, y, z)` — any expressions of the state (two expressions → a 2-D image) |
-| `section = expr` | optional: Poincaré section — a point is plotted only when `expr` changes sign between consecutive steps |
+| `section = expr` | optional: Poincaré section — a point is plotted only when `expr` changes sign between consecutive steps (direction: header `section_dir`) |
+| `on_section { stmts }` | optional: assignments to `x'`/`y'`/`z'`/`w'` applied after each plotted crossing (return maps; needs `section`) |
 | `choose { p1: stmts ; p2: stmts ; ... }` | IFS: pick one block at random with the given probabilities (normalised) |
 
 Exactly one of `{x',y',z',w'}` or `{dx,dy,dz,dw}` sets must be present (a 2-D system may omit
@@ -78,6 +79,53 @@ free extra dimension for:
 
 `w` is reset to `ic[3]` (default 0) when a trajectory restarts after diverging.
 
+### `kind: escape` — escape-time systems (Buddhabrot and friends)
+
+```text
+name: Buddhabrot
+kind: escape
+dims: 2
+region: -2.2 1.2 -1.7 1.7     # where orbit starts are drawn from (xmin xmax ymin ymax [zmin zmax])
+bailout: 2                    # an orbit has escaped once |(x, y, z)| > bailout
+max_iter: 500                 # orbits still bounded after this many steps are discarded
+min_iter: 20                  # orbits that escape sooner than this are discarded
+x' = x*x - y*y + x0
+y' = 2*x*y + y0
+color = w
+```
+
+An escape-time system draws **the paths of orbits that escape**. Every trajectory starts at
+a uniformly random point of `region`; that start is visible to the update statements as
+`x0`, `y0`, `z0` (in the Mandelbrot iteration it is the constant *c*). The orbit is
+iterated without drawing until it either escapes (radius > `bailout`, or diverges) or runs
+for `max_iter` steps. Bounded orbits are discarded; an orbit that escaped after *n* ≥
+`min_iter` steps is **replayed** from its start and its *n* − 1 bounded points are drawn,
+then a new start is chosen. During the replay `w` holds the escape count *n*, so
+`color = w` colours by escape time; `w` cannot be assigned. Statements use map syntax
+(`x' =`), `choose` and `section` are not allowed, and `x0`/`y0`/`z0` are reserved only in
+this kind (the polynomial map keeps its `x0`… coefficients). The frame is the start region
+(no attractor to sample), the Lyapunov probe reports *escape-time*, and because most
+iterations are spent probing, escape programs usually set `boost:` (10–30). The
+`gl_points` engine does not run escape programs; the other engines share the same orbit
+state machine.
+
+### `on_section { … }` — return maps with memory
+
+```text
+on_section {
+  w' = z          # remember this crossing's z for the next one
+}
+```
+
+The block holds assignments to `x'`, `y'`, `z'`, `w'` (and temporaries) that are applied to
+the state **right after a point has been plotted at a section crossing**. Because the
+plotted point is evaluated before the block runs, `plot = w, z, 0` with the block above
+draws (zₙ, zₙ₊₁) — the classic Lorenz return map of successive z maxima — and
+`section_dir: down` with `section = x*y - beta*z` (that is, dz) selects the maxima. Events
+fire during warm-up as well, so the memory is valid before the first plotted point. The
+`gl_points` engine cannot run programs with an `on_section` block (the engine selector
+skips it).
+
 ### `plot` and `section`
 
 `plot` decouples *what is integrated* from *what is drawn*. Before projection the kernel
@@ -85,7 +133,10 @@ evaluates the three plot expressions; framing, depth, gap filling and colouring 
 the plotted point. `plot = x, y` (two expressions) marks the attractor as 2-D.
 
 `section = expr` keeps only the points where `expr` crosses zero (strict sign change between
-the previous and the current step), i.e. a **Poincaré section** of the flow. Gap filling is
+the previous and the current step), i.e. a **Poincaré section** of the flow. The header
+`section_dir: both | up | down` (default `both`) restricts the crossing direction
+(`up` = − → +, `down` = + → −); with `section = dz` and `section_dir: down` a point is
+plotted at every **maximum** of z. Gap filling is
 automatically disabled because consecutive plotted points are no longer neighbours. A
 section plots one point per crossing, so a flow that crosses every ~500 steps needs a
 **much higher points-per-pixel** setting than a normal render (the stats panel shows the

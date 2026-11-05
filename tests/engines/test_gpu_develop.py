@@ -18,10 +18,12 @@ def _synthetic(w=640, h=480, seed=3) -> RenderResult:
     count[rng.random((h, w)) < 0.3] = 0.0
     depth = (rng.random((h, w), dtype=np.float32) - 0.5) * count
     cv = rng.random((h, w), dtype=np.float32) * count
-    return RenderResult(RenderSettings(), count, Framing((0, 0, 0), 1.0), RenderStats(), depth_sum=depth, cv_sum=cv)
+    yy, xx = np.mgrid[0:h, 0:w]
+    zmin = np.where(count > 0, (np.sin(xx / 40.0) * np.cos(yy / 30.0)).astype(np.float32), np.float32(np.inf))
+    return RenderResult(RenderSettings(), count, Framing((0, 0, 0), 1.0), RenderStats(), depth_sum=depth, cv_sum=cv, zmin=zmin)
 
 
-@pytest.mark.parametrize("style", ["gas", "dust", "light", "plasma"])
+@pytest.mark.parametrize("style", ["gas", "dust", "light", "plasma", "liquid", "solid"])
 @pytest.mark.parametrize("bg", ["solid", "transparent", "gradient"])
 def test_gpu_develop_matches_cpu(style, bg):
     from attractr.core.render.engines import selector
@@ -41,8 +43,9 @@ def test_gpu_develop_matches_cpu(style, bg):
 
 def test_gpu_develop_not_applicable_falls_back():
     res = _synthetic(64, 64)
-    look = Look(style="solid")
+    look = Look(style="gas", equalize=True)
     assert not gpu_develop.applicable(res, look)
     assert gpu_develop.develop_gpu(res, look, 1.0, look.gradient.lut(64)) is None
     dev = develop(res, replace(look, style="liquid"), gpu="force")
     assert dev.rgba.shape == (64, 64, 4)
+    assert not gpu_develop.applicable(replace(res, zmin=None), Look(style="solid"))

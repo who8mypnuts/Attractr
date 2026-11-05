@@ -24,6 +24,7 @@ from attractr.core.animation import helpers
 from attractr.core.animation.easing import EASINGS
 from attractr.gui.controllers.animation_controller import AnimationController
 from attractr.gui.state.document import Document
+from attractr.i18n import tr
 
 LABEL_W = 150
 ROW_H = 22
@@ -86,16 +87,16 @@ class TrackArea(QWidget):
                 p.drawLine(QPointF(x, RULER_H - 3), QPointF(x, RULER_H))
         # tracks
         y = RULER_H
-        for tr in self.tracks():
+        for trk in self.tracks():
             p.fillRect(QRectF(0, y, self.width(), ROW_H), QColor(18, 18, 26) if (y // ROW_H) % 2 else QColor(16, 16, 23))
             p.setPen(QColor(200, 205, 220))
-            p.drawText(QRectF(6, y, LABEL_W - 10, ROW_H), Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, tr.label)
+            p.drawText(QRectF(6, y, LABEL_W - 10, ROW_H), Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, trk.label)
             p.setPen(QPen(QColor(60, 60, 90), 1))
             p.drawLine(QPointF(self._x(0), y + ROW_H / 2), QPointF(self._x(tl.duration), y + ROW_H / 2))
-            for k in tr.keys:
+            for k in trk.keys:
                 x = self._x(k.time)
                 cy = y + ROW_H / 2
-                sel = self.selected == (tr.path, k.time)
+                sel = self.selected == (trk.path, k.time)
                 poly = QPolygonF([QPointF(x, cy - 6), QPointF(x + 6, cy), QPointF(x, cy + 6), QPointF(x - 6, cy)])
                 p.setBrush(QColor(255, 200, 80) if sel else QColor(79, 195, 247))
                 p.setPen(QPen(QColor(255, 255, 255) if sel else QColor(20, 20, 30), 1))
@@ -116,11 +117,11 @@ class TrackArea(QWidget):
         row = int((pos.y() - RULER_H) // ROW_H)
         trs = self.tracks()
         if 0 <= row < len(trs) and e.button() == Qt.MouseButton.LeftButton:
-            tr = trs[row]
-            for k in tr.keys:
+            trk = trs[row]
+            for k in trk.keys:
                 if abs(self._x(k.time) - pos.x()) <= 7:
-                    self.selected = (tr.path, k.time)
-                    self.keySelected.emit(tr.path, k.time)
+                    self.selected = (trk.path, k.time)
+                    self.keySelected.emit(trk.path, k.time)
                     self.update()
                     return
         self._dragging = True
@@ -138,13 +139,13 @@ class TrackArea(QWidget):
         trs = self.tracks()
         m = QMenu(self)
         if 0 <= row < len(trs):
-            tr = trs[row]
+            trk = trs[row]
             t = self._t(pos.x())
-            near = [k for k in tr.keys if abs(self._x(k.time) - pos.x()) <= 7]
+            near = [k for k in trk.keys if abs(self._x(k.time) - pos.x()) <= 7]
             if near:
-                m.addAction(f"Delete key at {near[0].time:.2f}s", lambda: self.removeKey.emit(tr.path, near[0].time))
-            m.addAction(f"Add key here ({t:.2f}s)", lambda: self._add_key(tr.path, t))
-            m.addAction(f"Remove track '{tr.label}'", lambda: self.removeTrack.emit(tr.path))
+                m.addAction(f"Delete key at {near[0].time:.2f}s", lambda: self.removeKey.emit(trk.path, near[0].time))
+            m.addAction(f"Add key here ({t:.2f}s)", lambda: self._add_key(trk.path, t))
+            m.addAction(f"Remove track '{trk.label}'", lambda: self.removeTrack.emit(trk.path))
         if m.actions():
             m.exec(self.mapToGlobal(pos))
 
@@ -182,27 +183,27 @@ class TimelinePanel(QWidget):
         for b in (self.btn_start, self.btn_play, self.btn_stop, self.btn_end):
             b.setFixedWidth(36)
             row.addWidget(b)
-        self.time_label = QLabel("0.00 s · frame 0")
+        self.time_label = QLabel(tr("0.00 s · frame 0"))
         self.time_label.setMinimumWidth(140)
         row.addWidget(self.time_label)
-        row.addWidget(QLabel("Duration"))
+        row.addWidget(QLabel(tr("Duration")))
         self.duration = QDoubleSpinBox()
         self.duration.setRange(0.1, 3600)
-        self.duration.setSuffix(" s")
+        self.duration.setSuffix(tr(" s"))
         self.duration.setDecimals(2)
         row.addWidget(self.duration)
-        row.addWidget(QLabel("fps"))
+        row.addWidget(QLabel(tr("fps")))
         self.fps = QSpinBox()
         self.fps.setRange(1, 120)
         row.addWidget(self.fps)
         self.loop = QComboBox()
         self.loop.addItems(["none", "loop", "pingpong"])
         row.addWidget(self.loop)
-        self.auto_key = QCheckBox("Auto-key")
-        self.auto_key.setToolTip("Record edits of animated properties as keyframes at the playhead")
+        self.auto_key = QCheckBox(tr("Auto-key"))
+        self.auto_key.setToolTip(tr("Record edits of animated properties as keyframes at the playhead"))
         row.addWidget(self.auto_key)
         row.addStretch(1)
-        self.btn_render = QPushButton("🎞 Render animation…")
+        self.btn_render = QPushButton(tr("🎞 Render animation…"))
         row.addWidget(self.btn_render)
         lay.addLayout(row)
 
@@ -212,15 +213,15 @@ class TimelinePanel(QWidget):
             b = QPushButton(text)
             b.clicked.connect(fn)
             row.addWidget(b)
-        self.btn_del_key = QPushButton("Delete keys at playhead")
+        self.btn_del_key = QPushButton(tr("Delete keys at playhead"))
         row.addWidget(self.btn_del_key)
-        row.addWidget(QLabel("Easing"))
+        row.addWidget(QLabel(tr("Easing")))
         self.easing = QComboBox()
         self.easing.addItems(list(EASINGS))
-        self.easing.setToolTip("Easing of the selected key into the next one")
+        self.easing.setToolTip(tr("Easing of the selected key into the next one"))
         row.addWidget(self.easing)
         self.btn_helpers = QToolButton()
-        self.btn_helpers.setText("Helpers ▾")
+        self.btn_helpers.setText(tr("Helpers ▾"))
         self.btn_helpers.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         menu = QMenu(self.btn_helpers)
         menu.addAction("Turntable (yaw)…", lambda: self._turntable("yaw"))
@@ -290,9 +291,9 @@ class TimelinePanel(QWidget):
             self.ctrl.play()
 
     def _on_key_selected(self, path: str, t: float) -> None:
-        tr = self.ctrl.timeline.tracks.get(path)
-        if tr:
-            for k in tr.keys:
+        trk = self.ctrl.timeline.tracks.get(path)
+        if trk:
+            for k in trk.keys:
                 if abs(k.time - t) < 1e-9:
                     self.easing.blockSignals(True)
                     self.easing.setCurrentText(k.easing)
@@ -303,18 +304,18 @@ class TimelinePanel(QWidget):
         sel = self.area.selected
         if sel is None:
             return
-        tr = self.ctrl.timeline.tracks.get(sel[0])
-        if tr:
-            for i, k in enumerate(tr.keys):
+        trk = self.ctrl.timeline.tracks.get(sel[0])
+        if trk:
+            for i, k in enumerate(trk.keys):
                 if abs(k.time - sel[1]) < 1e-9:
                     from dataclasses import replace
 
-                    tr.keys[i] = replace(k, easing=name)
+                    trk.keys[i] = replace(k, easing=name)
             self.ctrl.store()
 
     # ── helpers ────────────────────────────────────────────────────────────────
     def _turntable(self, axis: str) -> None:
-        rev, ok = QInputDialog.getDouble(self, "Turntable", "Revolutions:", 1.0, 0.25, 20.0, 2)
+        rev, ok = QInputDialog.getDouble(self, tr("Turntable"), tr("Revolutions:"), 1.0, 0.25, 20.0, 2)
         if ok:
             tl = helpers.turntable(self.doc.settings, self.duration.value(), self.fps.value(), axis, rev)
             self.ctrl.set_timeline(tl, self.doc.settings)
@@ -324,7 +325,7 @@ class TimelinePanel(QWidget):
 
         if self._morph_a is None:
             self._morph_a = self.doc.settings
-            QMessageBox.information(self, "Morph", "State A captured. Now change parameters / camera to the destination and pick Morph again to capture B.")
+            QMessageBox.information(self, tr("Morph"), tr("State A captured. Now change parameters / camera to the destination and pick Morph again to capture B."))
             return
         tl = helpers.morph(self._morph_a, self.doc.settings, self.duration.value(), self.fps.value())
         base = self._morph_a

@@ -33,6 +33,18 @@ Three GPU engines share one algorithm and the formula code generator
    per tile, so tiles join seamlessly and the result is deterministic.
 6. Readback → NumPy → the same `develop()` stage as the CPU engine.
 
+## Tiling
+
+Images whose accumulation buffers exceed the GPU budget (`ATTRACTR_GPU_BUDGET_MB`, default
+768 MB, supersampling included) are split into square tiles. Tiles are rendered
+**interleaved** in `INTERLEAVE_ROUNDS = 8` rounds: the per-tile trajectory state (state,
+RNG, previous point, stats — a few MB) lives on the device for the whole render, while the
+tile's accumulation images are created on each visit and restored from the host copies
+(`_upload`) / read back (`_readback`). The extra transfer costs a few hundred
+milliseconds per tile per round, negligible next to a multi-minute render, and buys
+uniform progress: live partials once per round, uniform checkpoints and a uniform
+"Finish now". The same scheme is used by the OpenCL and `gl_points` engines.
+
 ## Parity
 
 `tests/engines/test_gpu_parity.py` renders Clifford, Lorenz and the Barnsley fern on every

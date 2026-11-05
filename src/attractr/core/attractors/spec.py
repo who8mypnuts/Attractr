@@ -61,6 +61,11 @@ class AttractorSpec:
     jitter: float = 0.1
     warmup: int = 1000
     boost: float = 1.0  # iteration multiplier (Poincaré sections plot only a fraction of the steps)
+    # escape-time systems (kind: escape): orbit start region, bailout radius, iteration limits
+    region: tuple[float, ...] = (-2.0, 2.0, -2.0, 2.0, 0.0, 0.0)  # xmin xmax ymin ymax zmin zmax
+    bailout: float = 2.0
+    max_iter: int = 500
+    min_iter: int = 0
     camera: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 1.0)  # yaw, pitch, roll, zoom
     palette: str = "nebula"
     style: str = "gas"
@@ -80,6 +85,10 @@ class AttractorSpec:
     @property
     def is_flow(self) -> bool:
         return self.kind == "flow"
+
+    @property
+    def is_escape(self) -> bool:
+        return self.kind == "escape"
 
     def iteration_budget(self, quality_iterations: int) -> int:
         """Steps the engines actually run for a requested ``Quality.iterations``."""
@@ -142,6 +151,15 @@ def spec_from_source(source: str, id: str | None = None, path: Path | None = Non
     tags = tuple(t.strip() for t in re.split(r"[,\n]", h.get("tags", "")) if t.strip())
     refs = tuple(r.strip() for r in h.get("ref", "").split("\n") if r.strip())
     boost = max(1.0, float(eval_const(h["boost"]))) if "boost" in h else 1.0
+    region = (-2.0, 2.0, -2.0, 2.0, 0.0, 0.0)
+    if "region" in h:
+        vals = _parse_floats(h["region"])
+        if len(vals) not in (4, 6):
+            raise FormulaError(f"region: expected xmin xmax ymin ymax [zmin zmax], got {len(vals)} numbers")
+        region = tuple((list(vals) + [0.0, 0.0])[:6])  # type: ignore[assignment]
+    bailout = float(eval_const(h["bailout"])) if "bailout" in h else 2.0
+    max_iter = int(float(h["max_iter"])) if "max_iter" in h else 500
+    min_iter = int(float(h["min_iter"])) if "min_iter" in h else 0
     lyap = float(h["lyapunov"]) if "lyapunov" in h else None
     return AttractorSpec(
         id=spec_id,
@@ -156,11 +174,15 @@ def spec_from_source(source: str, id: str | None = None, path: Path | None = Non
         description=h.get("desc", ""),
         references=refs,
         author=h.get("author", ""),
-        family=h.get("family", {"map": "Maps", "flow": "Flows", "ifs": "IFS"}[an.kind]),
+        family=h.get("family", {"map": "Maps", "flow": "Flows", "ifs": "IFS", "escape": "Escape"}[an.kind]),
         tags=tags,
         dt=dt,
         ic=ic,
         boost=boost,
+        region=region,
+        bailout=bailout,
+        max_iter=max_iter,
+        min_iter=min_iter,
         jitter=float(h.get("jitter", 0.1)) if "jitter" in h else 0.1,
         warmup=int(float(h["warmup"])) if "warmup" in h else default_warmup(an.kind, dt),
         camera=camera,

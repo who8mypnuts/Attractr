@@ -10,6 +10,7 @@ layout(std430, binding = 1) buffer Rng    { uint rng_state[]; };
 layout(std430, binding = 2) buffer Prev   { vec4 prev[]; };   // u, v, cv, have(>0)
 layout(std430, binding = 3) buffer PrevD  { vec4 prevd[]; };  // previous step delta (curvature); .w = previous section value
 layout(std430, binding = 4) buffer Stats  { uint restarts; uint plotted_lo; uint plotted_hi; uint pad; };
+layout(std430, binding = 5) buffer Esc    { vec4 esc[]; };    // escape kind: [2i] = start x0,y0,z0,_  [2i+1] = mode,cnt,nrep,_
 
 layout(r32ui, binding = 0) uniform uimage2D img_count;
 layout(r32ui, binding = 1) uniform uimage2D img_depth;
@@ -36,6 +37,9 @@ uniform vec4  u_ic;
 uniform float u_jitter;
 uniform float u_inv_n;
 uniform vec2  u_cv_range;   // lo, 1/(hi-lo) — colour value fixed-point encoding range
+uniform vec3  u_esc_lo;     // escape kind: region minimum
+uniform vec3  u_esc_hi;     // escape kind: region maximum
+uniform vec3  u_esc_cfg;    // escape kind: bailout², max_iter, min_iter
 uniform float u_p[__NPARAMS__];
 
 const float FIXED = 256.0;          // 24.8 fixed point for count / depth / cv sums
@@ -43,6 +47,13 @@ const float DIVERGE_LIMIT = 1.0e6;
 
 //__PRELUDE__
 //__STEP__
+
+bool section_crossed(float sv, float psec) {   // sign change, filtered by SECTION_DIR (0 both, 1 up, 2 down)
+    if (!(sv * psec < 0.0)) return false;
+    if (SECTION_DIR == 1) return sv > 0.0;
+    if (SECTION_DIR == 2) return sv < 0.0;
+    return true;
+}
 
 uint _zkey(float z) {               // monotonic float → uint mapping for atomicMin
     uint k = floatBitsToUint(z);
@@ -95,6 +106,10 @@ float color_value(float qx, float qy, float qz, float speed, float radius, float
     return 0.0;
 }
 
+vec3 escape_start(inout uint rng) {
+    return u_esc_lo + vec3(_rand(rng), _rand(rng), _rand(rng)) * (u_esc_hi - u_esc_lo);
+}
+
 void main() {
     uint i = gl_GlobalInvocationID.x;
     if (i >= st.length()) return;
@@ -107,10 +122,55 @@ void main() {
     vec4 pd = prevd[i];
     float plotted = 0.0;
     bool want_color = u_flags.z != 0;
+    real x0 = R(0.0), y0 = R(0.0), z0 = R(0.0);
+    int emode = 0, ecnt = 0, enrep = 0;
+#if KIND_ESCAPE
+    vec4 e0 = esc[2u * i], e1 = esc[2u * i + 1u];
+    x0 = R(e0.x); y0 = R(e0.y); z0 = R(e0.z);
+    emode = int(e1.x); ecnt = int(e1.y); enrep = int(e1.z);
+#endif
 
     for (int n = 0; n < u_steps; n++) {
         real ox = x, oy = y, oz = z;
-        for (int k = 0; k < u_substeps; k++) { step(x, y, z, w, rng, tstep, dt); tstep += R(1.0); }
+        for (int k = 0; k < u_substeps; k++) { step(x, y, z, w, rng, tstep, dt, x0, y0, z0); tstep += R(1.0); }
+        real sx, sy, sz, sw;
+        float have_next = 1.0;
+#if KIND_ESCAPE
+        // ── escape-time orbit state machine (see cpu_kernel_template.accumulate) ──
+        ecnt += 1;
+        bool finite = !(isnan(x) || isnan(y) || isnan(z) || isinf(x) || isinf(y) || isinf(z));
+        if (emode == 0) {
+            if (!finite || float(x * x + y * y + z * z) > u_esc_cfg.x) {
+                if (float(ecnt - 1) >= u_esc_cfg.z && ecnt > 1) {
+                    emode = 1; enrep = ecnt - 1; ecnt = 0;
+                    x = x0; y = y0; z = z0; w = R(float(enrep));
+                } else {
+                    vec3 st0 = escape_start(rng);
+                    x0 = R(st0.x); y0 = R(st0.y); z0 = R(st0.z);
+                    x = x0; y = y0; z = z0; ecnt = 0;
+                }
+            } else if (float(ecnt) >= u_esc_cfg.y) {
+                vec3 st0 = escape_start(rng);
+                x0 = R(st0.x); y0 = R(st0.y); z0 = R(st0.z);
+                x = x0; y = y0; z = z0; ecnt = 0;
+            }
+            pv.w = 0.0;
+            continue;
+        }
+        sx = x; sy = y; sz = z; sw = w;
+        if (ecnt >= enrep || !finite) {
+            emode = 0;
+            vec3 st0 = escape_start(rng);
+            x0 = R(st0.x); y0 = R(st0.y); z0 = R(st0.z);
+            x = x0; y = y0; z = z0; ecnt = 0;
+            have_next = 0.0;
+        }
+        if (u_flags.w == 0) { pv.w = 0.0; continue; }
+        real fx = sx, fy = sy, fz = sz;
+#if HAS_PLOT
+        plot_fn(sx, sy, sz, sw, fx, fy, fz);
+#endif
+#else
         if (isnan(x) || isnan(y) || isnan(z) || isnan(w) || isinf(x) || isinf(y) || isinf(z) || isinf(w)
             || abs(x) > R(DIVERGE_LIMIT) || abs(y) > R(DIVERGE_LIMIT) || abs(z) > R(DIVERGE_LIMIT) || abs(w) > R(DIVERGE_LIMIT)) {
             x = R(u_ic.x) + (_rand(rng) - R(0.5)) * R(u_jitter);
@@ -121,16 +181,26 @@ void main() {
             pv.w = 0.0;
             continue;
         }
-        if (u_flags.w == 0) continue;
 #if HAS_SECTION
         float sv = float(section_fn(x, y, z, w));
-        bool crossed = sv * pd.w < 0.0;
+        bool crossed = section_crossed(sv, pd.w);
         pd.w = sv;
         if (!crossed) continue;
 #endif
+        if (u_flags.w == 0) {
+#if HAS_EVENT
+            event_fn(x, y, z, w, rng);
+#endif
+            continue;
+        }
         real fx = x, fy = y, fz = z;
 #if HAS_PLOT
         plot_fn(x, y, z, w, fx, fy, fz);
+#endif
+        sx = x; sy = y; sz = z; sw = w;   // state at the plotted point (the event may change it)
+#if HAS_EVENT
+        event_fn(x, y, z, w, rng);
+#endif
 #endif
         vec3 q = u_R * vec3((real3(fx, fy, fz) - real3(u_center)) * R(u_inv_radius));
         float d = max(1.0 + u_persp * q.z, 0.05);
@@ -139,7 +209,7 @@ void main() {
         if (!(u > -1.0e6 && u < 1.0e6 && v > -1.0e6 && v < 1.0e6)) { pv.w = 0.0; continue; }
         float cv = 0.0;
         if (want_color) {
-            vec3 dd = vec3(real3(x - ox, y - oy, z - oz));
+            vec3 dd = vec3(real3(sx - ox, sy - oy, sz - oz));
             float speed = length(dd) * u_inv_radius;
             float curv = 0.5;
             if (u_color_code == 8) {
@@ -147,7 +217,7 @@ void main() {
                 if (la > 1e-12 && lb > 1e-12) curv = 0.5 * (1.0 - clamp(dot(dd, pd.xyz) / (la * lb), -1.0, 1.0));
                 pd.xyz = dd;
             }
-            cv = color_value(q.x, q.y, q.z, speed, length(q), curv, float(i) * u_inv_n, x, y, z, w);
+            cv = color_value(q.x, q.y, q.z, speed, length(q), curv, float(i) * u_inv_n, sx, sy, sz, sw);
         }
         int nseg = 1;
         if (u_gap_fill != 0 && pv.w > 0.0) {
@@ -162,11 +232,15 @@ void main() {
             float cc = (nseg > 1) ? mix(pv.z, cv, f) : cv;
             plotted += splat(uu, vv, wseg, q.z, cc);
         }
-        pv = vec4(u, v, cv, 1.0);
+        pv = vec4(u, v, cv, have_next);
     }
     st[i] = real4(x, y, z, w);
     rng_state[i] = rng;
     prev[i] = pv;
+#if KIND_ESCAPE
+    esc[2u * i] = vec4(float(x0), float(y0), float(z0), 0.0);
+    esc[2u * i + 1u] = vec4(float(emode), float(ecnt), float(enrep), 0.0);
+#endif
     prevd[i] = pd;
     // 64-bit-ish accumulation of plotted weight: lo in 1/16 units, carry into hi
     uint add = uint(plotted * 16.0 + 0.5);

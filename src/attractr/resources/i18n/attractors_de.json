@@ -1,0 +1,53 @@
+{
+ "lorenz": {
+  "desc": "Der berühmte Schmetterling. Edward Lorenz' Wettermodell von 1963 — das System, das „Chaos“ zum Alltagswort machte.",
+  "hints": {
+   "sigma": "σ (Prandtl-Zahl) — Viskosität des Fluids. Standardwert 10.",
+   "rho": "ρ (Rayleigh-Zahl) — Heizung von unten. Chaos erscheint oberhalb von ≈ 24,74.",
+   "beta": "β — geometrisches Seitenverhältnis der Konvektionszellen."
+  }
+ },
+ "clifford": {
+  "desc": "Clifford Pickovers Sinus-Kosinus-Abbildung — das Urbild aller „seltsamen Attraktoren“ in Chaoscope: vier Sinusterme genügen für Gewebe, Schleier und Knoten. Hier in die dritte Dimension gehoben.",
+  "hints": {}
+ },
+ "rossler": {
+  "desc": "Otto Rösslers Band von 1976: eine einzige Falte, die Spirale um die z-Achse und ein Sprung nach oben — das einfachste chaotische Fließgleichgewicht.",
+  "hints": {
+   "a": "a — Dämpfung der Spirale.",
+   "b": "b — Hub in z.",
+   "c": "c — Höhe der Falte; Chaos ab ≈ 4,2."
+  }
+ },
+ "henon": {
+  "desc": "Michel Hénons Abbildung von 1976 — die gestreckte und gefaltete Banane, das Lehrbuchbeispiel eines seltsamen Attraktors.",
+  "hints": {
+   "a": "a — Stärke der Faltung (1,4 klassisch).",
+   "b": "b — Kontraktion (0,3 klassisch)."
+  }
+ },
+ "barnsley_fern": {
+  "desc": "Michael Barnsleys Farn (1988): vier affine Abbildungen, zufällig gewählt, zeichnen ein ganzes Farnblatt — hier mit einer Verdrehung in die dritte Dimension.",
+  "hints": {
+   "width": "Breite der Fiederblätter.",
+   "lean": "Neigung des Stängels.",
+   "twist": "Verdrehung des Blatts um die Hauptachse (3-D)."
+  }
+ },
+ "buddhabrot": {
+  "desc": "Melinda Greens Buddhabrot (1993): die Mandelbrot-Iteration z → z² + c von zufälligen Punkten c aus gestartet; nur entkommende Orbits werden gezeichnet, und zwar jeder besuchte Punkt. Wo die Mandelbrot-Menge schwarz ist, türmen sich die Wege der entkommenden Orbits zur sitzenden Figur.",
+  "hints": {
+   "power": "Exponent der Iteration z → zⁿ + c (2 ist die Mandelbrot-Menge)."
+  }
+ },
+ "thomas": {
+  "desc": "René Thomas' zyklisch symmetrischer Attraktor — ein wolliges Knäuel aus Tunneln, in dem sich die Bahn verläuft.",
+  "hints": {
+   "b": "b — Dämpfung; kleiner = chaotischer (klassisch 0,208)."
+  }
+ },
+ "aizawa": {
+  "desc": "Ein verdrillter Torus. Schleifen winden sich um eine zentrale Achse und driften daran entlang — Muschel- oder Möbius-artige Formen.",
+  "hints": {}
+ }
+}

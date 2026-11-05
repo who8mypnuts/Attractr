@@ -49,7 +49,10 @@ void main() {
     vec4 o = texelFetch(u_old, tc, 0);
     bool restarted = o.x > 1e29;
 #if HAS_SECTION
-    if (restarted || section_fn(o.x, o.y, o.z, o.w) * section_fn(s.x, s.y, s.z, s.w) >= 0.0) {
+    float sv_new = section_fn(s.x, s.y, s.z, s.w);
+    bool crossed = !restarted && section_fn(o.x, o.y, o.z, o.w) * sv_new < 0.0
+                   && (SECTION_DIR == 0 || (SECTION_DIR == 1 && sv_new > 0.0) || (SECTION_DIR == 2 && sv_new < 0.0));
+    if (!crossed) {
         gl_Position = vec4(-10.0, -10.0, 0.0, 1.0);   // no section crossing this step
         return;
     }

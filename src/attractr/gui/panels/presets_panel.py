@@ -21,6 +21,7 @@ from attractr.core.project.codes import settings_from_code, settings_to_code
 from attractr.core.project.presets import Preset, presets
 from attractr.gui.controllers.worker_client import WorkerClient as ThumbnailWorker
 from attractr.gui.state.document import TAGS_ALL, Document
+from attractr.i18n import tr
 
 THUMB = 96
 
@@ -47,9 +48,9 @@ class PresetsPanel(QWidget):
         lay.setContentsMargins(6, 6, 6, 6)
 
         # daily card
-        self.daily_label = QLabel("Attractor of the day: …")
+        self.daily_label = QLabel(tr("Attractor of the day: …"))
         self.daily_label.setWordWrap(True)
-        self.btn_daily = QPushButton("Open today's attractor")
+        self.btn_daily = QPushButton(tr("Open today's attractor"))
         self.btn_daily.setEnabled(False)
         row = QHBoxLayout()
         row.addWidget(self.daily_label, 1)
@@ -64,12 +65,12 @@ class PresetsPanel(QWidget):
         lay.addWidget(self.tabs, 1)
 
         btns = QHBoxLayout()
-        self.btn_save = QPushButton("💾 Save current…")
-        self.btn_delete = QPushButton("Delete")
-        self.btn_copy = QPushButton("Copy code")
-        self.btn_copy.setToolTip("Copy an ATR1: share code of the current settings to the clipboard")
-        self.btn_paste = QPushButton("Paste code")
-        self.btn_paste.setToolTip("Apply an ATR1: / CHS1: code from the clipboard")
+        self.btn_save = QPushButton(tr("💾 Save current…"))
+        self.btn_delete = QPushButton(tr("Delete"))
+        self.btn_copy = QPushButton(tr("Copy code"))
+        self.btn_copy.setToolTip(tr("Copy an ATR1: share code of the current settings to the clipboard"))
+        self.btn_paste = QPushButton(tr("Paste code"))
+        self.btn_paste.setToolTip(tr("Apply an ATR1: / CHS1: code from the clipboard"))
         for b in (self.btn_save, self.btn_delete, self.btn_copy, self.btn_paste):
             btns.addWidget(b)
         lay.addLayout(btns)
@@ -129,10 +130,10 @@ class PresetsPanel(QWidget):
         try:
             self.doc.apply(p.apply(self.doc.settings), f"Preset {p.name}", TAGS_ALL)
         except Exception as exc:  # noqa: BLE001
-            QMessageBox.warning(self, "Preset", f"Could not apply preset: {exc}")
+            QMessageBox.warning(self, tr("Preset"), f"Could not apply preset: {exc}")
 
     def _save(self) -> None:
-        name, ok = QInputDialog.getText(self, "Save preset", "Preset name:", text=self.doc.spec.name)
+        name, ok = QInputDialog.getText(self, tr("Save preset"), tr("Preset name:"), text=self.doc.spec.name)
         if not ok or not name.strip():
             return
         p = Preset.from_settings(name.strip(), self.doc.settings)
@@ -156,13 +157,13 @@ class PresetsPanel(QWidget):
         text = QGuiApplication.clipboard().text()
         s = settings_from_code(text)
         if s is None:
-            QMessageBox.information(self, "Paste code", "No ATR1: or CHS1: code found in the clipboard.")
+            QMessageBox.information(self, tr("Paste code"), tr("No ATR1: or CHS1: code found in the clipboard."))
             return
         self.doc.apply(s, "Paste code", TAGS_ALL)
 
     def _on_daily(self, preset, settings) -> None:
         if preset is None:
-            self.daily_label.setText("Attractor of the day: unavailable")
+            self.daily_label.setText(tr("Attractor of the day: unavailable"))
             return
         self._daily_settings = settings
         self.daily_label.setText(f"✦ Attractor of the day: <b>{preset.name}</b> ({preset.attractor}, {preset.style})")

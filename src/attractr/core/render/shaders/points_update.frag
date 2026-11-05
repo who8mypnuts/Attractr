@@ -27,7 +27,7 @@ void main() {
     real x = s.x, y = s.y, z = s.z, w = s.w;
     real tstep = R(u_t0);
     real ox = x, oy = y, oz = z, ow = w;
-    for (int k = 0; k < u_substeps; k++) { step(x, y, z, w, rng, tstep, R(u_dt)); tstep += R(1.0); }
+    for (int k = 0; k < u_substeps; k++) { step(x, y, z, w, rng, tstep, R(u_dt), x, y, z); tstep += R(1.0); }
     bool restarted = false;
     if (isnan(x) || isnan(y) || isnan(z) || isnan(w) || isinf(x) || isinf(y) || isinf(z) || isinf(w)
         || abs(x) > DIVERGE_LIMIT || abs(y) > DIVERGE_LIMIT || abs(z) > DIVERGE_LIMIT || abs(w) > DIVERGE_LIMIT) {

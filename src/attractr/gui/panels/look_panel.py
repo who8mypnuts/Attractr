@@ -30,6 +30,7 @@ from attractr.gui.widgets.collapsible import Collapsible
 from attractr.gui.widgets.color_button import ColorButton
 from attractr.gui.widgets.gradient_bar import GradientBar
 from attractr.gui.widgets.slider_spin import SliderSpin
+from attractr.i18n import tr
 
 STYLE_HELP = {
     "gas": "Log-density accumulation — the classic Chaoscope look.",
@@ -69,10 +70,10 @@ class LookPanel(QWidget):
         self.style_help.setStyleSheet("color: #999; font-size: 11px;")
         self.color_source = QComboBox()
         self.color_source.addItems(list(COLOR_SOURCES))
-        self.color_source.setToolTip("What drives the palette index (density = classic)")
-        f.addRow("Style", self.style)
+        self.color_source.setToolTip(tr("What drives the palette index (density = classic)"))
+        f.addRow(tr("Style"), self.style)
         f.addRow("", self.style_help)
-        f.addRow("Colour by", self.color_source)
+        f.addRow(tr("Colour by"), self.color_source)
         lay.addWidget(Collapsible("Style", w))
 
         # ── palette ────────────────────────────────────────────────────────────
@@ -83,9 +84,9 @@ class LookPanel(QWidget):
         self.palette = QComboBox()
         for pid, g in palettes.items():
             self.palette.addItem(g.name, pid)
-        self.palette.setToolTip("Built-in and user palettes")
-        self.btn_edit_gradient = QPushButton("Edit…")
-        self.btn_edit_gradient.setToolTip("Open the gradient editor")
+        self.palette.setToolTip(tr("Built-in and user palettes"))
+        self.btn_edit_gradient = QPushButton(tr("Edit…"))
+        self.btn_edit_gradient.setToolTip(tr("Open the gradient editor"))
         row.addWidget(self.palette, 1)
         row.addWidget(self.btn_edit_gradient)
         v.addLayout(row)
@@ -108,10 +109,10 @@ class LookPanel(QWidget):
         for s in (self.percentile, self.gamma, self.brightness, self.contrast):
             v.addWidget(s)
         row = QHBoxLayout()
-        self.equalize = QCheckBox("Full range (equalise)")
-        self.invert = QCheckBox("Invert")
-        self.caption = QCheckBox("Caption")
-        self.caption.setToolTip("Draw the attractor name, formula and parameters on exported images")
+        self.equalize = QCheckBox(tr("Full range (equalise)"))
+        self.invert = QCheckBox(tr("Invert"))
+        self.caption = QCheckBox(tr("Caption"))
+        self.caption.setToolTip(tr("Draw the attractor name, formula and parameters on exported images"))
         row.addWidget(self.equalize)
         row.addWidget(self.invert)
         row.addWidget(self.caption)
@@ -144,7 +145,7 @@ class LookPanel(QWidget):
         for s in (self.l_az, self.l_el, self.l_amb, self.l_dif, self.l_spec, self.l_shin):
             v.addWidget(s)
         row = QHBoxLayout()
-        row.addWidget(QLabel("Light colour"))
+        row.addWidget(QLabel(tr("Light colour")))
         self.l_color = ColorButton((1, 1, 1))
         row.addWidget(self.l_color)
         row.addStretch(1)
@@ -162,12 +163,12 @@ class LookPanel(QWidget):
         self.bg_color2 = ColorButton((0.05, 0.02, 0.12))
         self.bg_proc = QComboBox()
         self.bg_proc.addItems(list(PROCEDURAL_BACKGROUNDS))
-        self.bg_image = QPushButton("Choose image…")
-        f.addRow("Mode", self.bg_mode)
-        f.addRow("Colour", self.bg_color)
-        f.addRow("Colour 2", self.bg_color2)
-        f.addRow("Procedural", self.bg_proc)
-        f.addRow("Image", self.bg_image)
+        self.bg_image = QPushButton(tr("Choose image…"))
+        f.addRow(tr("Mode"), self.bg_mode)
+        f.addRow(tr("Colour"), self.bg_color)
+        f.addRow(tr("Colour 2"), self.bg_color2)
+        f.addRow(tr("Procedural"), self.bg_proc)
+        f.addRow(tr("Image"), self.bg_image)
         lay.addWidget(Collapsible("Background", w, expanded=False))
         lay.addStretch(1)
 
@@ -288,6 +289,6 @@ class LookPanel(QWidget):
     def _pick_image(self) -> None:
         from PySide6.QtWidgets import QFileDialog
 
-        path, _ = QFileDialog.getOpenFileName(self, "Background image", "", "Images (*.png *.jpg *.jpeg *.webp *.tif)")
+        path, _ = QFileDialog.getOpenFileName(self, tr("Background image"), "", "Images (*.png *.jpg *.jpeg *.webp *.tif)")
         if path:
             self._set_bg(mode="image", image_path=path)

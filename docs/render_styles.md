@@ -43,14 +43,16 @@ full settings JSON and an `ATR1:` code in `tEXt` chunks.
 ## Where the develop pass runs
 
 `develop(result, look)` is NumPy code (`core/render/develop/*.py`). For **large images
-(≥ 1.5 Mpixel)** and the per-pixel styles (Gas, Dust, Light, Plasma) the same formulas run
-as an OpenGL 4.3 compute shader (`shaders/develop.comp`, driver `gpu_develop.py`): the
-count / colour / depth buffers are uploaded in row chunks, the shader writes straight-alpha
-RGBA and the result is read back. The handful of global scalars (normaliser percentile,
-1–99 % ranges of colour value and depth) are still estimated on the CPU from a strided
-subsample. Looks that need neighbourhood operations — Liquid / Solid lighting,
-histogram equalisation (*Full range*), bloom (`glow > 0`), image / procedural backgrounds —
-always use the CPU path. The GPU pass switches itself off for the session after the first
+(≥ 1.5 Mpixel)** the same formulas run as OpenGL 4.3 compute shaders (driver
+`gpu_develop.py`): `shaders/develop.comp` for the per-pixel styles (Gas, Dust, Light,
+Plasma) and `shaders/develop_light.comp` for the lit styles (Liquid, Solid — a global
+fill-height scan, then per row chunk with a 2-row halo: height field → 3×3 binomial blur →
+central-difference normals → Phong → style → composite). The count / colour / depth /
+nearest-depth buffers are uploaded in row chunks, the shader writes straight-alpha RGBA
+and the result is read back. The handful of global scalars (normaliser percentile, 1–99 %
+ranges of colour value, depth and surface depth) are still estimated on the CPU from a
+strided subsample. Looks the shaders do not cover — histogram equalisation (*Full
+range*), bloom (`glow > 0`), image / procedural backgrounds — always use the CPU path. The GPU pass switches itself off for the session after the first
 OpenGL failure; it can be disabled in *Preferences → GPU develop* or with
 `attractr render --develop cpu`. `tests/engines/test_gpu_develop.py` checks that both paths
 agree to within 8-bit quantisation.

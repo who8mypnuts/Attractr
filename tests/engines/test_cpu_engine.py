@@ -41,3 +41,17 @@ def test_lyapunov_matches_literature():
     assert abs(lam.exponent - 0.419) < 0.03
     lam = largest_exponent(registry.get("lorenz"), steps=20000)
     assert abs(lam.exponent - 0.906) < 0.1
+
+
+def test_escape_kind_renders_buddhabrot():
+    from attractr.core.attractors.registry import registry
+    from attractr.core.render.pipeline import accumulate, default_settings
+    from attractr.core.render.settings import Quality
+
+    spec = registry.get("buddhabrot")
+    s = default_settings(spec, Quality(width=64, height=64, points_per_pixel=30, engine="cpu"))
+    res = accumulate(s, engine="cpu")
+    assert res.count.sum() > 0 and res.stats.restarts == 0
+    assert 0.001 < res.stats.points_plotted / res.stats.iterations_done < 0.2  # only escaping orbits are drawn
+    # the frame is the start region, so the figure sits inside the bailout disk
+    assert res.framing.radius > 1.0

@@ -22,6 +22,7 @@ from attractr.gui.state.document import Document
 from attractr.gui.widgets.collapsible import Collapsible
 from attractr.gui.widgets.slider_spin import SliderSpin
 from attractr.gui.widgets.xy_pad import XYPad
+from attractr.i18n import tr
 
 
 class ParametersPanel(QWidget):
@@ -60,14 +61,14 @@ class ParametersPanel(QWidget):
         form.setContentsMargins(0, 0, 0, 0)
         self.integrator = QComboBox()
         self.integrator.addItems(list(INTEGRATORS))
-        self.integrator.setToolTip("RK4 is accurate; Euler (legacy) reproduces the Android Chaoscope look at the same dt")
+        self.integrator.setToolTip(tr("RK4 is accurate; Euler (legacy) reproduces the Android Chaoscope look at the same dt"))
         self.dt = SliderSpin("dt", 1e-4, 0.1, 0.01, decimals=6, log_scale=True, hint="Integration time step")
         self.substeps = QSpinBox()
         self.substeps.setRange(1, 32)
-        self.substeps.setToolTip("Integrator steps per plotted point (smoother curves without changing dt)")
-        form.addRow("Integrator", self.integrator)
+        self.substeps.setToolTip(tr("Integrator steps per plotted point (smoother curves without changing dt)"))
+        form.addRow(tr("Integrator"), self.integrator)
         form.addRow(self.dt)
-        form.addRow("Sub-steps", self.substeps)
+        form.addRow(tr("Sub-steps"), self.substeps)
         self.integ_section = Collapsible("Integration", integ, expanded=False)
         self.body_lay.addWidget(self.integ_section)
         self.xy_pad = XYPad(doc)
@@ -75,11 +76,11 @@ class ParametersPanel(QWidget):
         self.body_lay.addStretch(1)
 
         btns = QHBoxLayout()
-        self.btn_random = QPushButton("🎲 Randomize")
-        self.btn_random.setToolTip("Random values for all unlocked parameters")
-        self.btn_reset = QPushButton("Reset")
-        self.btn_surprise = QPushButton("✨ Surprise me")
-        self.btn_surprise.setToolTip("Random attractor, parameters, camera and palette")
+        self.btn_random = QPushButton(tr("🎲 Randomize"))
+        self.btn_random.setToolTip(tr("Random values for all unlocked parameters"))
+        self.btn_reset = QPushButton(tr("Reset"))
+        self.btn_surprise = QPushButton(tr("✨ Surprise me"))
+        self.btn_surprise.setToolTip(tr("Random attractor, parameters, camera and palette"))
         btns.addWidget(self.btn_random)
         btns.addWidget(self.btn_reset)
         btns.addWidget(self.btn_surprise)
@@ -115,10 +116,12 @@ class ParametersPanel(QWidget):
             s.interactionStarted.connect(self.doc.begin_interaction)
             s.interactionEnded.connect(self.doc.end_interaction)
             s.lockToggled.connect(lambda on, n=p.name: self.locked.add(n) if on else self.locked.discard(n))
+            s.seed_history(self.doc.history_for(p.name))
+            s.valueCommitted.connect(lambda v, n=p.name: self.doc.remember_param(n, v))
             self.params_lay.addWidget(s)
             self.sliders[p.name] = s
         if not spec.params:
-            lbl = QLabel("This system has no free parameters.")
+            lbl = QLabel(tr("This system has no free parameters."))
             lbl.setStyleSheet("color: #888;")
             self.params_lay.addWidget(lbl)
             self.sliders["__none__"] = lbl  # type: ignore[assignment]

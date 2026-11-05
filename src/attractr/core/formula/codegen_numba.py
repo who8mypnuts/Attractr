@@ -38,7 +38,7 @@ class PyEmitter:
 
     def __init__(self, params: tuple[str, ...], state: dict[str, str] | None = None) -> None:
         self.params = {n: i for i, n in enumerate(params)}
-        self.state = state or {"x": "x", "y": "y", "z": "z", "w": "w"}
+        self.state = dict(state or {"x": "x", "y": "y", "z": "z", "w": "w"})
 
     def name(self, n: str) -> str:
         if n in self.state:
@@ -117,8 +117,8 @@ def _find_special(prog: Program, target: str) -> Assign | None:
 
 
 def generate_map_step(prog: Program, an: Analysis) -> str:
-    em = PyEmitter(an.params)
-    lines = [NJIT, "def step(x, y, z, w, p, rs, i, t_step, dt):", "    _nx = x; _ny = y; _nz = z; _nw = w"]
+    em = PyEmitter(an.params, _state_names(an))
+    lines = [NJIT, "def step(x, y, z, w, p, rs, i, t_step, dt, x0, y0, z0):", "    _nx = x; _ny = y; _nz = z; _nw = w"]
     for stmt in prog.body:
         if isinstance(stmt, Choose):
             total = sum(b.prob for b in stmt.branches)
@@ -152,7 +152,7 @@ def generate_flow_step(prog: Program, an: Analysis, integrator: str) -> str:
         tgt = "_" + stmt.target if stmt.is_deriv else em.name(stmt.target)
         lines.append(f"    {tgt} = {em.expr(stmt.expr)}")
     lines.append("    return _dx, _dy, _dz, _dw")
-    lines += ["", NJIT, "def step(x, y, z, w, p, rs, i, t_step, dt):"]
+    lines += ["", NJIT, "def step(x, y, z, w, p, rs, i, t_step, dt, x0, y0, z0):"]
     if integrator == "euler":
         lines += [
             "    k1x, k1y, k1z, k1w = deriv(x, y, z, w, p, rs, i, t_step)",
@@ -179,6 +179,14 @@ def generate_flow_step(prog: Program, an: Analysis, integrator: str) -> str:
             "            w + s * (k1w + 2.0 * k2w + 2.0 * k3w + k4w))",
         ]
     return "\n".join(lines)
+
+
+def _state_names(an: Analysis) -> dict[str, str]:
+    """State-variable spelling for update statements; escape systems also see the orbit start."""
+    names = {"x": "x", "y": "y", "z": "z", "w": "w"}
+    if an.kind == "escape":
+        names.update({"x0": "x0", "y0": "y0", "z0": "z0"})
+    return names
 
 
 def _temps_prelude(prog: Program, em: PyEmitter) -> list[str]:
@@ -229,6 +237,21 @@ def generate_section_fn(prog: Program, an: Analysis) -> str:
     return "\n".join(lines)
 
 
+def generate_event_fn(prog: Program, an: Analysis) -> str:
+    """``event_fn(x, y, z, w, p, rs, i) -> (x, y, z, w)``: the ``on_section`` assignments, applied to
+    the state right after a point was plotted at a section crossing (identity when absent)."""
+    lines = [NJIT, "def event_fn(x, y, z, w, p, rs, i):"]
+    if not prog.on_section:
+        lines.append("    return x, y, z, w")
+        return "\n".join(lines)
+    em = PyEmitter(an.params)
+    lines.append("    _nx = x; _ny = y; _nz = z; _nw = w")
+    for a in prog.on_section:
+        lines.append(f"    {em.name(a.target)} = {em.expr(a.expr)}")
+    lines.append("    return _nx, _ny, _nz, _nw")
+    return "\n".join(lines)
+
+
 def generate_module_source(prog: Program, an: Analysis, integrator: str = "rk4") -> str:
     """Complete Python module text for the attractor's step/colour functions."""
     head = [
@@ -244,7 +267,10 @@ def generate_module_source(prog: Program, an: Analysis, integrator: str = "rk4")
         f"HAS_COLOR = {an.has_color!r}",
         f"HAS_PLOT = {an.has_plot!r}",
         f"HAS_SECTION = {an.has_section!r}",
+        f"HAS_EVENT = {an.has_event!r}",
+        f"SECTION_DIR = {prog.section_dir}",
         f"USES_W = {an.uses_w!r}",
+        f"KIND_ESCAPE = {an.kind == 'escape'!r}",
         f"INTEGRATOR = {integrator!r}",
         "",
     ]
@@ -253,4 +279,5 @@ def generate_module_source(prog: Program, an: Analysis, integrator: str = "rk4")
     else:
         body = generate_map_step(prog, an)
     return ("\n".join(head) + body + "\n\n" + generate_color_fn(prog, an) + "\n\n"
-            + generate_plot_fn(prog, an) + "\n\n" + generate_section_fn(prog, an) + "\n")
+            + generate_plot_fn(prog, an) + "\n\n" + generate_section_fn(prog, an) + "\n\n"
+            + generate_event_fn(prog, an) + "\n")

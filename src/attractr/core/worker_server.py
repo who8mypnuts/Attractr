@@ -31,7 +31,7 @@ def render_thumb(settings: RenderSettings, size: int, ppp: float = 6.0):
     s = replace(settings, quality=q)
     spec = resolve_spec(s)
     try:
-        result = selector.select("auto", "preview").accumulate(s, spec)
+        result = selector.select("auto", "preview", spec).accumulate(s, spec)
     except Exception:  # noqa: BLE001
         result = selector.get_engine("cpu").accumulate(s, spec)
     return develop(result, s.look)

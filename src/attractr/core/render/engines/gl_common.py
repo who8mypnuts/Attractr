@@ -49,6 +49,16 @@ def create_context(require: int = 430):
         raise GLUnavailable(f"could not create an OpenGL {require / 100:.1f} context: {exc}") from exc
 
 
+def make_current(ctx) -> None:
+    """Make ``ctx`` the thread's current GL context.  Several engines (and the GPU
+    developer) own separate standalone contexts; whichever was used last is current, so
+    every entry point re-asserts its own before issuing GL calls."""
+    try:
+        ctx.__enter__()
+    except Exception:  # noqa: BLE001 — older moderngl without multi-context support
+        pass
+
+
 def query_info(ctx) -> GLInfo:
     info = ctx.info
     exts = set(ctx.extensions) if hasattr(ctx, "extensions") else set()
@@ -80,6 +90,7 @@ class GLContextPool:
             self._local.ctx = ctx
             with self._lock:
                 self._all.append(ctx)
+        make_current(ctx)
         return ctx
 
     def release_all(self) -> None:

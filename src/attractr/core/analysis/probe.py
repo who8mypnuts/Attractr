@@ -40,6 +40,6 @@ def probe(spec: AttractorSpec, params: dict[str, float] | None = None, dt: float
     cloud = plotted(pts)
     dim = box_counting_dimension(cloud) if cloud.shape[0] > 100 else float("nan")
     cls = lam.label
-    if finite.mean() < 0.5:
+    if finite.mean() < 0.5 and not spec.is_escape:
         cls = "divergent"
     return ProbeResult(lam.exponent, cls, fr.radius, dim, 1.0 - float(finite.mean()))

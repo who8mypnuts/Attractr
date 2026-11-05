@@ -7,6 +7,7 @@ from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QDialog, QDialogButtonBox, QHBoxLayout, QLabel, QVBoxLayout
 
 from attractr.core.io.paths import resources_dir
+from attractr.i18n import tr
 from attractr.version import __version__
 
 TEXT = f"""
@@ -22,7 +23,7 @@ all tributes to Nicolas Desprez's original Chaoscope.</p>
 class AboutDialog(QDialog):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("About Attractr")
+        self.setWindowTitle(tr("About Attractr"))
         lay = QVBoxLayout(self)
         row = QHBoxLayout()
         logo = resources_dir() / "logo" / "attractr_256.png"

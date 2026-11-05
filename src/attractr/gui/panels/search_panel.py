@@ -35,6 +35,7 @@ from attractr.core.render.pipeline import default_settings
 from attractr.core.render.settings import RenderSettings
 from attractr.gui.controllers.develop_controller import to_qimage
 from attractr.gui.state.document import Document
+from attractr.i18n import tr
 
 THUMB = 112
 POLY_ID = "polynomial_sprott"
@@ -65,7 +66,7 @@ class SearchThread(QThread):
                 q = replace(self.settings.quality, width=THUMB, height=THUMB, points_per_pixel=5.0, supersample=1, splat_radius=0)
                 s = replace(self.settings, quality=q).with_param_dict(h.params)
                 try:
-                    engine = selector.select("auto", "preview")
+                    engine = selector.select("auto", "preview", self.spec)
                     res = engine.accumulate(s, self.spec, cancel=self.cancel)
                 except Cancelled:
                     raise
@@ -92,29 +93,29 @@ class SearchPanel(QWidget):
         self.space = QComboBox()
         for label, key in SPACES:
             self.space.addItem(label, key)
-        self.space.setToolTip("What to search: the selected attractor's parameter ranges, or the classic polynomial-map coefficient space")
+        self.space.setToolTip(tr("What to search: the selected attractor's parameter ranges, or the classic polynomial-map coefficient space"))
         lay.addWidget(self.space)
-        row.addWidget(QLabel("Results"))
+        row.addWidget(QLabel(tr("Results")))
         self.count = QSpinBox()
         self.count.setRange(1, 64)
         self.count.setValue(12)
         row.addWidget(self.count)
-        row.addWidget(QLabel("Radius"))
+        row.addWidget(QLabel(tr("Radius")))
         self.radius = QDoubleSpinBox()
         self.radius.setRange(0.01, 1.0)
         self.radius.setSingleStep(0.05)
         self.radius.setValue(1.0)
-        self.radius.setToolTip("1 = anywhere in the parameter ranges; smaller = mutate around the current values")
+        self.radius.setToolTip(tr("1 = anywhere in the parameter ranges; smaller = mutate around the current values"))
         row.addWidget(self.radius)
-        self.use_locks = QCheckBox("Keep locked")
+        self.use_locks = QCheckBox(tr("Keep locked"))
         self.use_locks.setChecked(True)
         row.addWidget(self.use_locks)
-        row.addWidget(QLabel("Coef ±"))
+        row.addWidget(QLabel(tr("Coef ±")))
         self.magnitude = QDoubleSpinBox()
         self.magnitude.setRange(0.1, 3.0)
         self.magnitude.setSingleStep(0.1)
         self.magnitude.setValue(1.2)
-        self.magnitude.setToolTip("Polynomial map: coefficients are drawn from [−magnitude, +magnitude] (Sprott used 1.2)")
+        self.magnitude.setToolTip(tr("Polynomial map: coefficients are drawn from [−magnitude, +magnitude] (Sprott used 1.2)"))
         self.magnitude.setVisible(False)
         row.addWidget(self.magnitude)
         lay.addLayout(row)
@@ -127,10 +128,10 @@ class SearchPanel(QWidget):
         self.list.setSpacing(6)
         lay.addWidget(self.list, 1)
         btns = QHBoxLayout()
-        self.btn_go = QPushButton("🔍 Search")
-        self.btn_stop = QPushButton("Stop")
+        self.btn_go = QPushButton(tr("🔍 Search"))
+        self.btn_stop = QPushButton(tr("Stop"))
         self.btn_stop.setEnabled(False)
-        self.btn_clear = QPushButton("Clear")
+        self.btn_clear = QPushButton(tr("Clear"))
         self.status = QLabel("")
         btns.addWidget(self.btn_go)
         btns.addWidget(self.btn_stop)

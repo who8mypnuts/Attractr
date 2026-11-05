@@ -20,10 +20,11 @@ that was reached.
 * GUI: the ⏹ button of a job row.
 * CLI: `attractr render … --finish-after SEC` (a soft time limit).
 
-Tiled renders: a tile that is complete when the request arrives stays complete; the tile
-in progress stops where it is and every *later* tile receives the same reduced budget.
-The image is therefore uniform only when the request arrives during the first tile —
-prefer a checkpoint + resume for very large renders.
+Tiled GPU renders are **interleaved**: every tile is visited in 8 rounds (its trajectory
+state stays on the GPU, the big accumulation images are re-uploaded per visit), so all
+tiles are always within one round of each other. A soft stop therefore yields a uniform
+image (every tile ends at the same step count), partial results arrive once per round,
+and checkpoints of tiled renders are ordinary uniform checkpoints.
 
 ## 3. Checkpoints & resume
 
@@ -48,15 +49,15 @@ to the fresh ones. The result is statistically indistinguishable from an uninter
 render (`tests/unit/test_checkpoint.py`). A resumed job writes further checkpoints with
 an incremented `segment`, so a render can be interrupted any number of times.
 
-Two checkpoint shapes exist:
+Checkpoints are **uniform** (`tiles_done = 0`): every pixel holds `iterations_done`
+points' worth of accumulation, whatever engine or tiling produced it, so a checkpoint can
+be resumed on any engine. (A legacy *tiled* shape — `tiles_done > 0`, the first *n* tiles
+complete — is still readable; it must be resumed with the same engine/tiling.)
 
-* **uniform** (`tiles_done = 0`) — every pixel holds `iterations_done` points' worth of
-  accumulation (CPU engine, single-tile GPU renders);
-* **tiled** (`tiles_done > 0`) — the first *n* tiles of a tiled GPU render are complete
-  and the rest empty; resuming skips those tiles. Such a checkpoint must be resumed with
-  the same engine on a device that produces the same tiling (the file records the tile
-  count and the engine refuses otherwise); it cannot fall back to the CPU engine.
-
-Limitations: the supersampled buffers are stored already box-filtered to output
-resolution, which is exactly what the final image uses, so nothing is lost — but a
-checkpoint cannot be resumed at a *different* size, supersampling or splat radius.
+Changing quality on resume: the buffers are stored box-filtered to output resolution —
+exactly what the final image uses, so nothing is lost — and the remaining budget is
+accumulated independently, so it **may use a different supersampling factor, splat
+radius, engine or precision** (`attractr render --resume FILE --ss 1 --splat 2`; the
+remaining points simply land with the new settings). Only the pixel size is fixed: a
+checkpoint of a different width × height is refused. Points per pixel can be raised as
+well — the engine renders `new budget − points already done`.

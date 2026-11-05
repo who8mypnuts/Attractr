@@ -65,6 +65,7 @@ class Document(QObject):
         self.path: Path | None = None
         self.animation: dict | None = None
         self.notes = ""
+        self.param_history: dict[str, dict[str, list[float]]] = {}  # attractor id → param → last values (saved with the project)
         if settings is None:
             settings = default_settings(registry.get("lorenz"))
         self.settings: RenderSettings = settings
@@ -174,11 +175,23 @@ class Document(QObject):
         look = replace(self.settings.look, gradient=palettes.get(pid))
         self.apply(replace(new, params=tuple(vals.items()), camera=cam, look=look), "Surprise me", TAGS_ALL)
 
+    # ── parameter value history (persisted in the project) ────────────────────
+    def remember_param(self, name: str, value: float, limit: int = 20) -> None:
+        hist = self.param_history.setdefault(self.spec.id, {}).setdefault(name, [])
+        if hist and abs(hist[-1] - value) <= 1e-12:
+            return
+        hist.append(float(value))
+        del hist[:-limit]
+
+    def history_for(self, name: str) -> list[float]:
+        return list(self.param_history.get(self.spec.id, {}).get(name, []))
+
     # ── files ──────────────────────────────────────────────────────────────────
     def load(self, path: str | Path) -> None:
         proj = load_project(path)
         self.animation = proj.animation
         self.notes = proj.notes
+        self.param_history = proj.history
         self.undo_stack.clear()
         self._set(proj.settings, TAGS_ALL)
         self.path = Path(path)
@@ -189,7 +202,7 @@ class Document(QObject):
         path = Path(path) if path else self.path
         if path is None:
             raise ValueError("no path")
-        proj = Project(self.settings, self.animation, self.notes, path)
+        proj = Project(self.settings, self.animation, self.notes, path, self.param_history)
         out = save_project(proj, path)
         self.path = out
         self.undo_stack.setClean()
@@ -200,6 +213,7 @@ class Document(QObject):
         self.undo_stack.clear()
         self.path = None
         self.animation = None
+        self.param_history = {}
         self._set(default_settings(registry.get(spec_id)), TAGS_ALL)
         self.undo_stack.setClean()
         self.pathChanged.emit(None)

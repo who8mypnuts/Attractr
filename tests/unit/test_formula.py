@@ -98,7 +98,7 @@ def test_codegen_numba_matches_python(tmp_path):
     for _ in range(50):
         nx = math.sin(p[0] * y) + p[2] * math.cos(p[0] * x)
         ny = math.sin(p[1] * x) + p[3] * math.cos(p[1] * y)
-        gx, gy, gz, gw = cf.step(x, y, z, 0.0, p, rs, 0, 0.0, 0.0)
+        gx, gy, gz, gw = cf.step(x, y, z, 0.0, p, rs, 0, 0.0, 0.0, 0.0, 0.0, 0.0)
         assert abs(gx - nx) < 1e-12 and abs(gy - ny) < 1e-12 and gz == 0.0 and gw == 0.0
         x, y = nx, ny
 
@@ -124,7 +124,7 @@ def test_dsl_w_plot_section():
     cf = compile_source(FORCED)
     p = np.array([0.5])
     rs = np.array([1], dtype=np.uint32)
-    x, y, z, w = cf.step(0.1, 0.0, 0.0, 0.0, p, rs, 0, 0.0, 0.01)
+    x, y, z, w = cf.step(0.1, 0.0, 0.0, 0.0, p, rs, 0, 0.0, 0.01, 0.0, 0.0, 0.0)
     assert abs(w - 0.01) < 1e-15 and z == 0.0
     assert cf.plot_fn(1.0, 2.0, 3.0, 4.0, p) == (1.0, 2.0, 0.0)
     assert abs(cf.section_fn(0.0, 0.0, 0.0, math.pi / 0.6, p)) < 1e-12
@@ -145,3 +145,83 @@ def test_dsl_rejects_tuple_outside_plot_and_w_assignment():
             except FormulaError:
                 continue
         raise AssertionError(bad)
+
+
+RETURN_MAP = """name: Lorenz return map
+dt: 0.005
+section_dir: down
+param sigma = 10
+param rho = 28
+param beta = 8/3
+dx = sigma*(y - x)
+dy = x*(rho - z) - y
+dz = x*y - beta*z
+dw = 0
+plot = w, z, 0
+section = x*y - beta*z
+on_section { w' = z }
+"""
+
+
+def test_on_section_event_and_direction():
+    from attractr.core.formula.compile import compile_source
+    from attractr.core.formula.pretty import program_to_source
+    from attractr.core.formula.validate import validate
+
+    prog = parse(RETURN_MAP)
+    an = validate(prog)
+    assert an.has_section and an.has_event and an.uses_w and prog.section_dir == 2
+    assert "on_section {" in program_to_source(prog) and "w' = z" in program_to_source(prog)
+    cf = compile_source(RETURN_MAP)
+    p = np.array([10.0, 28.0, 8 / 3])
+    rs = np.array([1], dtype=np.uint32)
+    assert cf.module.event_fn(1.0, 2.0, 3.0, 4.0, p, rs, 0) == (1.0, 2.0, 3.0, 3.0)
+    assert cf.module.HAS_EVENT and cf.module.SECTION_DIR == 2
+    for bad in (RETURN_MAP.replace("section = x*y - beta*z\n", ""),  # event without a section
+                RETURN_MAP.replace("on_section { w' = z }", "on_section { dw = 1 }"),
+                RETURN_MAP.replace("section_dir: down", "section_dir: sideways")):
+        try:
+            validate(parse(bad))
+        except FormulaError:
+            continue
+        raise AssertionError(bad)
+
+
+BUDDHA = """name: B
+kind: escape
+dims: 2
+region: -2 1 -1.5 1.5
+bailout: 2
+max_iter: 100
+min_iter: 5
+x' = x*x - y*y + x0
+y' = 2*x*y + y0
+color = w
+"""
+
+
+def test_escape_kind_validation_and_codegen():
+    from attractr.core.attractors.spec import spec_from_source
+    from attractr.core.formula.compile import compile_source
+    from attractr.core.formula.validate import validate
+
+    an = validate(parse(BUDDHA))
+    assert an.kind == "escape" and an.dims == 2 and an.has_color
+    spec = spec_from_source(BUDDHA)
+    assert spec.is_escape and spec.region == (-2.0, 1.0, -1.5, 1.5, 0.0, 0.0) and spec.max_iter == 100 and spec.min_iter == 5
+    cf = compile_source(BUDDHA)
+    p = np.zeros(0)
+    rs = np.array([1], dtype=np.uint32)
+    assert cf.step(0.0, 0.0, 0.0, 0.0, p, rs, 0, 0.0, 1.0, 0.25, -0.5, 0.0) == (0.25, -0.5, 0.0, 0.0)
+    assert cf.module.KIND_ESCAPE
+    for bad in ("name: m\nx' = x + x0\ny' = y\n",  # x0 outside escape kind
+                BUDDHA.replace("color = w", "w' = 1"),  # w is the escape count
+                BUDDHA + "section = x\n",
+                BUDDHA.replace("max_iter: 100", "max_iter: 0")):
+        try:
+            validate(parse(bad))
+        except FormulaError:
+            continue
+        raise AssertionError(bad)
+    # x0.. are ordinary names outside escape systems (the polynomial map uses them as coefficients)
+    assert validate(parse("name: m\nparam x0 = 1\nx' = x0*y\ny' = x\n")).kind == "map"

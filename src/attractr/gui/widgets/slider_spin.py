@@ -30,6 +30,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from attractr.i18n import tr
+
 SLIDER_STEPS = 20000
 NUDGE = 0.01  # fraction of the soft range per wheel notch / arrow key / nudge click
 HISTORY = 20
@@ -47,7 +49,7 @@ def modifier_scale(mods) -> float:
 class RangeDialog(QDialog):
     def __init__(self, lo: float, hi: float, parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Slider range")
+        self.setWindowTitle(tr("Slider range"))
         form = QFormLayout(self)
         self.lo = QDoubleSpinBox()
         self.hi = QDoubleSpinBox()
@@ -55,8 +57,8 @@ class RangeDialog(QDialog):
             sb.setDecimals(6)
             sb.setRange(-1e9, 1e9)
             sb.setValue(v)
-        form.addRow("Minimum", self.lo)
-        form.addRow("Maximum", self.hi)
+        form.addRow(tr("Minimum"), self.lo)
+        form.addRow(tr("Maximum"), self.hi)
         bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         bb.accepted.connect(self.accept)
         bb.rejected.connect(self.reject)
@@ -69,6 +71,7 @@ class SliderSpin(QWidget):
     interactionEnded = Signal()
     lockToggled = Signal(bool)
     resetRequested = Signal()
+    valueCommitted = Signal(float)  # a value entered the history (release, spin edit, nudge, paste)
 
     def __init__(self, label: str, lo: float, hi: float, value: float, *, decimals: int = 4,
                  is_int: bool = False, log_scale: bool = False, hint: str = "", default: float | None = None,
@@ -99,7 +102,7 @@ class SliderSpin(QWidget):
         self.lock_btn = QToolButton()
         self.lock_btn.setText("🔒")
         self.lock_btn.setCheckable(True)
-        self.lock_btn.setToolTip("Lock (excluded from randomize)")
+        self.lock_btn.setToolTip(tr("Lock (excluded from randomize)"))
         self.lock_btn.setVisible(show_lock)
         self.lock_btn.toggled.connect(self._on_lock)
         self.nudge_down = QToolButton()
@@ -110,7 +113,7 @@ class SliderSpin(QWidget):
             b.setAutoRepeat(True)
             b.setAutoRepeatDelay(300)
             b.setAutoRepeatInterval(60)
-            b.setToolTip("Nudge by 1 % of the range (Shift: 10 %, Ctrl: 0.1 %)")
+            b.setToolTip(tr("Nudge by 1 % of the range (Shift: 10 %, Ctrl: 0.1 %)"))
             b.clicked.connect(lambda _=False, sg=sign: self.nudge(sg * NUDGE * modifier_scale(QGuiApplication.keyboardModifiers())))
         self.history: deque[float] = deque(maxlen=HISTORY)
 
@@ -176,6 +179,12 @@ class SliderSpin(QWidget):
         if self.history and abs(self.history[-1] - v) <= 1e-12:
             return
         self.history.append(v)
+        self.valueCommitted.emit(v)
+
+    def seed_history(self, values) -> None:
+        """Pre-fill the history (e.g. from a saved project) without emitting."""
+        self.history.clear()
+        self.history.extend(float(v) for v in values)
 
     def _on_release(self) -> None:
         self._remember(self.value())
@@ -251,27 +260,27 @@ class SliderSpin(QWidget):
         m = QMenu(self)
         a_reset = QAction(f"Reset to {self.default:g}", m)
         a_reset.triggered.connect(self._reset)
-        a_range = QAction("Edit slider range…", m)
+        a_range = QAction(tr("Edit slider range…"), m)
         a_range.triggered.connect(self._edit_range)
-        a_wide = QAction("Widen range ×2", m)
+        a_wide = QAction(tr("Widen range ×2"), m)
         a_wide.triggered.connect(lambda: self._scale_range(2.0))
-        a_narrow = QAction("Narrow range ×½ around value", m)
+        a_narrow = QAction(tr("Narrow range ×½ around value"), m)
         a_narrow.triggered.connect(lambda: self._scale_range(0.5))
         m.addActions([a_reset, a_range, a_wide, a_narrow])
         m.addSeparator()
-        a_copy = QAction("Copy value", m)
+        a_copy = QAction(tr("Copy value"), m)
         a_copy.triggered.connect(lambda: QGuiApplication.clipboard().setText(f"{self.value():.10g}"))
-        a_paste = QAction("Paste value", m)
+        a_paste = QAction(tr("Paste value"), m)
         a_paste.triggered.connect(self._paste)
         m.addActions([a_copy, a_paste])
         if self.history:
-            sub = m.addMenu("Recent values")
+            sub = m.addMenu(tr("Recent values"))
             for v in reversed(list(self.history)):
                 act = QAction(f"{v:.6g}", sub)
                 act.triggered.connect(lambda _=False, val=v: self._apply_history(val))
                 sub.addAction(act)
         if self.lock_btn.isVisible():
-            a_lock = QAction("Locked", m)
+            a_lock = QAction(tr("Locked"), m)
             a_lock.setCheckable(True)
             a_lock.setChecked(self.locked)
             a_lock.toggled.connect(self.lock_btn.setChecked)

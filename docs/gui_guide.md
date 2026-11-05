@@ -10,7 +10,7 @@ The layout is remembered between sessions.
 | Dock | What it does |
 |---|---|
 | **Attractors** | thumbnails of every built-in and user attractor, grouped by family, with search. Click to load. |
-| **Parameters** | a slider + spin box per parameter (right-click: reset, edit range, widen/narrow, lock, copy/paste, *Recent values* — the last 20 committed values), − / + nudge buttons, integrator/dt/sub-steps for flows, XY pad, Randomize / Reset / Surprise me. Scrubbing: wheel = 1 % of the range, **Ctrl** 0.1 %, **Shift** 10 %; ← → on a slider the same, Page Up/Down 10 %. |
+| **Parameters** | a slider + spin box per parameter (right-click: reset, edit range, widen/narrow, lock, copy/paste, *Recent values* — the last 20 committed values), − / + nudge buttons, integrator/dt/sub-steps for flows, XY pad, Randomize / Reset / Surprise me. The history is saved in the project. Scrubbing: wheel = 1 % of the range, **Ctrl** 0.1 %, **Shift** 10 %; ← → on a slider the same, Page Up/Down 10 %. |
 | **Presets** | curated presets (ported from Chaoscope), your saved presets, Attractor of the Day, copy/paste `ATR1:` share codes (Chaoscope `CHS1:` codes are imported too). |
 | **Look** | style, colour source, palette (+ gradient editor), tone mapping (percentile, gamma, brightness, contrast, equalise, invert, caption), depth/style options, lighting, background. |
 | **Camera** | yaw / pitch / roll / zoom / pan / perspective, framing mode, presets. |
@@ -18,7 +18,7 @@ The layout is remembered between sessions.
 | **Statistics** | live render statistics + density histogram with the tone curve; Dynamics (Lyapunov, dimension); System (engine probe). |
 | **Formula** (`F4`) | the DSL editor — see formula_dsl.md. |
 | **Search** (`Ctrl+F`) | random parameter search filtered by Lyapunov exponent, with thumbnails. |
-| **Gallery** | your rendered images: open, re-open their settings, show folder. |
+| **Gallery** | your rendered images: open, re-open their settings, show folder. Multi-select + **Re-render…** renders the chosen images again with a render preset. |
 | **Timeline** (`T`) | keyframe animation — see animation.md. |
 | **Jobs** | render / animation queue with progress, ETA, a live thumbnail per render, ⏹ *Finish now* (stop accumulating, keep and save the result), 💾 *Checkpoint now* and cancel. Interrupted renders are resumed with *Render → Resume from checkpoint…* (see [checkpoints.md](checkpoints.md)). |
 

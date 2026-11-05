@@ -9,6 +9,7 @@ shown in the Info panel and this documentation page.
 Kinds:
 
 * **map** — discrete iteration `x' = f(x)`; every step produces one point.
+* **escape** — escape-time iteration from random starts; only escaping orbits are drawn (§3c).
 * **flow** — ODE `dx/dt = f(x)`; integrated with RK4 (default) or Euler; `dt` is an
   integrator setting (default per system), not a shape parameter.
 * **ifs** — random choice between several affine/other maps (probabilities).
@@ -138,9 +139,12 @@ suggested-improvements list, **L** = literature.
 | Chaos game (n-gon with rules) | S L | `k` = random vertex, re-drawn when forbidden by `avoid` (uses `w` as memory) `x' = x + (cos(2πk/n + twist) - x)*s` … `w' = k` | n=5 s=0.5 avoid=1 twist=0 | restricted chaos game; presets: pentagon/hexagon/square/Sierpinski/spiral |
 | Lorenz (Poincaré section) | S | Lorenz + `plot = x, y, 0` `section = z - height` | height=27, `boost: 40` | the "Lorenz map" |
 | Rössler (Poincaré section) | S | Rössler + `plot = x, z, 0` `section = y` | `boost: 150` | both crossing directions are kept |
+| Lorenz return map | S L | Lorenz + `plot = w, z, 0` `section = x*y - beta*z` (dz) `section_dir: down` `on_section { w' = z }` | `boost: 40` | zₙ₊₁ vs zₙ at successive z maxima — the 1963 cusp map |
+| Rössler return map | S L | Rössler + `plot = w, x, 0` `section = -y - z` (dx) `section_dir: down` `on_section { w' = x }` | `boost: 100` | xₙ₊₁ vs xₙ at successive x maxima |
 
-Dropped after testing: *Burning Ship orbit cloud* (escape-time iteration has no bounded
-attractor — framing is dominated by escaping orbits), *Duffing–van der Pol map* (no chaotic
+Dropped after testing (and revisited — see §3c): *Burning Ship orbit cloud* (escape-time
+iteration has no bounded attractor — framing is dominated by escaping orbits; now done
+properly as `kind: escape`), *Duffing–van der Pol map* (no chaotic
 parameter set found in a quick search), *Hadley* (identical to Lorenz-84 → curated preset
 "Hadley spring" instead), *Langford* (identical to Aizawa).
 
@@ -164,6 +168,15 @@ parameter set found in a quick search), *Hadley* (identical to Lorenz-84 → cur
 | Van der Pol (driven) | S L | `dx = y` `dy = mu*(1-x^2)*y - x + A*cos(omega*w)` `dw = 1` `plot = x, y*yscale, 0` | μ=5 A=5 ω=2.463 yscale=0.25 | 0.005; Parlitz–Lauterborn chaotic case (the textbook μ=8.53, A=1.2, ω=2π/10 set is periodic at this dt) |
 | Rössler hyperchaos (4-D) | S L | `dx = -y - z` `dy = x + a*y + w` `dz = b + x*z` `dw = -c*z + d*w` | a=0.25 b=3 c=0.5 d=0.05 | 0.005 · (-10,-6,0,10) |
 | Lorenz–Stenflo (4-D) | S L | `dx = sigma*(y-x) + s*w` `dy = x*(r-z) - y` `dz = x*y - b*z` `dw = -x - sigma*w` | σ=1 r=26 b=0.7 s=1.5 | 0.005 · (1,1,1,1) |
+
+### 3c. Escape-time systems (`kind: escape`, added with the DSL extension)
+
+| Name | Iteration | Region · bailout · iterations | Notes |
+|---|---|---|---|
+| Buddhabrot | `x' = re_pow(x, y, power) + x0` `y' = im_pow(x, y, power) + y0` | [−2.2, 1.2]×[−1.7, 1.7] · 2 · 20–500 | `power` exponent; `color = w` = escape time; camera roll −90° for the seated figure |
+| Burning Ship (escape orbits) | `x' = |x|² − |y|² + x0` `y' = 2|x||y| + y0` | [−2.5, 1.5]×[−2, 1.2] · 2 · 10–400 | |
+| Tricorn (escape orbits) | `x' = x² − y² + x0` `y' = −2xy + y0` | [−2.2, 1.8]×[−2, 2] · 2 · 10–400 | |
+| Julia (escape orbits) | `x' = x² − y² + c_re` `y' = 2xy + c_im` | [−2, 2]² · 2 · 5–300 | c_re=−0.8 c_im=0.156 |
 
 ### IFS
 

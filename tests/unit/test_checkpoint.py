@@ -55,3 +55,16 @@ def test_checkpoint_size_mismatch_is_rejected(tmp_path):
         assert "size" in str(exc)
     else:
         raise AssertionError("expected a size mismatch error")
+
+
+def test_resume_with_different_supersampling_and_splat():
+    """Buffers are stored at output resolution, so the remaining budget may use another
+    supersampling factor / splat radius; only the pixel size is fixed."""
+    s = _settings()
+    base = replace(s, quality=replace(s.quality, points_per_pixel=40, supersample=2))
+    full = accumulate(base, engine="cpu")
+    half = accumulate(replace(base, quality=replace(base.quality, points_per_pixel=20)), engine="cpu")
+    ck = Checkpoint.from_result(half)
+    resumed = accumulate(replace(base, quality=replace(base.quality, supersample=1, splat_radius=1)), engine="cpu", resume=ck)
+    assert resumed.stats.iterations_done == full.stats.iterations_done
+    assert abs(resumed.count.sum() - full.count.sum()) / full.count.sum() < 0.03

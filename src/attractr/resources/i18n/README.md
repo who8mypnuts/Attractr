@@ -1,17 +1,15 @@
 # Translations
 
-Drop compiled Qt translation files here as `attractr_<locale>.qm` (e.g. `attractr_de.qm`,
-`attractr_fr_CA.qm`). They are loaded at start-up for the system locale, or for the locale
-named in the `ATTRACTR_LANG` environment variable (`ATTRACTR_LANG=de attractr`).
+* `attractr_<locale>.ts` / `.qm` — the GUI strings (Qt Linguist format, context `attractr`).
+  Loaded at start-up for the system locale or `ATTRACTR_LANG` (`ATTRACTR_LANG=de attractr`).
+* `attractors_<locale>.json` — overlays for the descriptions and parameter hints of the
+  built-in `.atr` files (`{"lorenz": {"desc": "…", "hints": {"sigma": "…"}}}`).
 
-To create one: wrap user-visible strings in the code with `tr("…")`
-(`from attractr.i18n import tr`), then
+Update / add a language (see docs/development.md):
 
 ```bash
-pyside6-lupdate src/attractr -ts src/attractr/resources/i18n/attractr_de.ts
-# translate with Qt Linguist, then
-pyside6-lrelease src/attractr/resources/i18n/attractr_de.ts
+python tools/wrap_tr.py                       # wrap new GUI literals in tr()
+python tools/extract_ts.py fr                 # → attractr_fr.ts (keeps finished entries)
+pyside6-lrelease src/attractr/resources/i18n/attractr_fr.ts
+python tools/extract_attractor_strings.py fr  # → attractors_fr.json template
 ```
-
-Only strings wrapped in `tr()` are translatable; the rest of the program is still plain
-English (see docs/development.md, "Internationalisation").

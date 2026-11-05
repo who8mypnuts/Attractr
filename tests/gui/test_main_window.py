@@ -135,3 +135,20 @@ def test_drag_and_drop_payloads(app, tmp_path, monkeypatch):
     w.doc.undo_stack.setClean()
     w.close()
     pump(app, 0.3)
+
+
+def test_gallery_rerender_queues_jobs(app, tmp_path):
+    from attractr.core.project.render_presets import render_presets
+    from attractr.gui.main_window import MainWindow
+
+    w = MainWindow()
+    w.show()
+    n = len(w.queue.pending) + len(w.queue.running)
+    w.rerender_settings([w.doc.settings, w.doc.settings], render_presets.get("Draft 1024²"))
+    jobs = w.queue.pending + w.queue.running
+    assert len(jobs) == n + 2 and all(j.settings.quality.width == 1024 for j in jobs[-2:])
+    w.queue.cancel_all()
+    pump(app, 2.0, lambda: w.queue.is_idle)
+    w.doc.undo_stack.setClean()
+    w.close()
+    pump(app, 0.3)

@@ -69,3 +69,4 @@ FUNCTIONS: dict[str, FunctionSpec] = {
 }
 
 RESERVED_VARS = frozenset({"x", "y", "z", "w", "t_step", "pi", "e", "tau"})  # a parameter may shadow "e"
+START_VARS = frozenset({"x0", "y0", "z0"})  # orbit start point — reserved in escape-time systems only

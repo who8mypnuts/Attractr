@@ -25,6 +25,7 @@ from attractr.core.render.develop.developer import develop
 from attractr.core.render.engines import selector
 from attractr.gui.controllers.develop_controller import to_qimage
 from attractr.gui.state.document import Document
+from attractr.i18n import tr
 
 THUMB = 140
 
@@ -48,7 +49,7 @@ class _MutateThread(QThread):
                 params = base if i == 0 else random_params(self.spec, rng, locked, base, self.radius)
                 s = replace(self.settings, quality=q).with_param_dict(params)
                 try:
-                    res = selector.select("auto", "preview").accumulate(s, self.spec, cancel=self.cancel)
+                    res = selector.select("auto", "preview", self.spec).accumulate(s, self.spec, cancel=self.cancel)
                 except Cancelled:
                     return
                 except Exception:  # noqa: BLE001
@@ -61,7 +62,7 @@ class _MutateThread(QThread):
 class MutateDialog(QDialog):
     def __init__(self, doc: Document, locked_provider, parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Mutate — pick a variation")
+        self.setWindowTitle(tr("Mutate — pick a variation"))
         self.setModal(False)
         self.doc = doc
         self.locked_provider = locked_provider
@@ -69,7 +70,7 @@ class MutateDialog(QDialog):
         self._params: dict[int, dict] = {}
         lay = QVBoxLayout(self)
         row = QHBoxLayout()
-        row.addWidget(QLabel("Radius"))
+        row.addWidget(QLabel(tr("Radius")))
         self.radius = QSlider(Qt.Orientation.Horizontal)
         self.radius.setRange(1, 100)
         self.radius.setValue(15)
@@ -79,7 +80,7 @@ class MutateDialog(QDialog):
         self.grid = QComboBox()
         self.grid.addItems(["3 × 3", "4 × 4"])
         row.addWidget(self.grid)
-        self.btn_again = QPushButton("↻ Again")
+        self.btn_again = QPushButton(tr("↻ Again"))
         row.addWidget(self.btn_again)
         lay.addLayout(row)
         self.list = QListWidget()
@@ -89,7 +90,7 @@ class MutateDialog(QDialog):
         self.list.setMovement(QListWidget.Movement.Static)
         self.list.setSpacing(6)
         lay.addWidget(self.list, 1)
-        hint = QLabel("The first tile is the current state. Click a tile to adopt its parameters, then mutate again to zoom in on a look.")
+        hint = QLabel(tr("The first tile is the current state. Click a tile to adopt its parameters, then mutate again to zoom in on a look."))
         hint.setStyleSheet("color:#888")
         hint.setWordWrap(True)
         lay.addWidget(hint)

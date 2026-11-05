@@ -36,32 +36,32 @@ by the items that were tried and dropped and a fresh list of what could come nex
 * **Hadley** / **Langford** as separate entries — identical to Lorenz-84 / Aizawa; a
   curated preset ("Hadley spring") covers the requested regime instead.
 
-## 3. What could come next
+## 3. Second round — all implemented
 
-1. **Return maps with memory** — `section` plots the crossing point; a *return map*
-   (x_{n+1} vs x_n at successive crossings, e.g. the Lorenz map of successive z maxima)
-   needs the previous crossing value to be stored at the event. A DSL hook such as
-   `on_section: w = x` (assignments executed only when the section fires) would make
-   every textbook return map a two-line program.
-2. **Buddhabrot-style escape renderer** — a fourth kind (`kind: escape`) where each
-   trajectory starts at a random point of a region, is iterated until it escapes or hits a
-   step limit, and only escaping orbits are plotted. Shares the accumulation/develop
-   pipeline; needs its own framing (the start region) and kernel loop.
-3. **String wrapping for translations** — the `tr()` seam exists; wrapping the ~600
-   user-visible literals and adding a German/French `.ts` is mechanical work, plus a
-   per-locale overlay format for `.atr` descriptions and hints.
-4. **Resume across sizes** — a checkpoint stores buffers at output resolution; allowing a
-   resumed render to change supersampling / splat radius would need the supersampled
-   buffers (×ss² memory) to be stored.
-5. **Tiled "Finish now"** — for multi-tile GPU renders the soft stop leaves later tiles at
-   the reduced budget (documented); a fairer policy would render every remaining tile to
-   the same fraction as the one in progress, which requires knowing the time budget
-   rather than a flag.
-6. **Gallery → batch re-render** — select several gallery entries and re-render them with
-   a render preset (the batch machinery takes a folder today; a list of settings would be
-   a five-line addition).
-7. **GPU develop for Liquid / Solid** — screen-space normals and lighting as a second
-   compute pass (a 3×3 neighbourhood), leaving only equalisation and image backgrounds on
-   the CPU.
-8. **Per-parameter history persistence** — the *Recent values* list lives in the widget;
-   storing it in the project (per attractor/parameter) would make it survive sessions.
+| Item | Where |
+|---|---|
+| Return maps with memory: `on_section { … }` + `section_dir:` | `core/formula/*`, all kernels; Lorenz / Rössler return maps; [formula_dsl.md](formula_dsl.md) |
+| Escape-time renderer: `kind: escape` (Buddhabrot technique) | kernels (CPU / GL compute / OpenCL), `x0 y0 z0`, `region/bailout/max_iter/min_iter`; Buddhabrot, Burning Ship, Tricorn, Julia escape orbits |
+| Translations: `tr()` wrapping, `.ts` tooling, German UI, `.atr` overlays | `tools/wrap_tr.py`, `tools/extract_ts.py`, `tools/extract_attractor_strings.py`, `resources/i18n/`, `core/attractors/overlays.py` |
+| Resume with different supersampling / splat / engine | already supported by the output-resolution checkpoint design — now tested and documented ([checkpoints.md](checkpoints.md)) |
+| Uniform "Finish now" for tiled renders | **interleaved tiles** (8 rounds) in all GPU engines — uniform progress, per-round partials and uniform checkpoints as a bonus ([engine_gl.md](engine_gl.md)) |
+| Gallery → batch re-render | Gallery multi-select + *Re-render…* with a render preset |
+| GPU develop for Liquid / Solid | `shaders/develop_light.comp` (height field, blur, normals, Phong; chunked with halos) |
+| Persisted parameter history | `history` in the project file; sliders are seeded from it |
+
+## 4. What could come next
+
+1. **Anti-Buddhabrot / Nebulabrot** — `kind: escape` variants that draw the *bounded* orbits
+   (or colour channels by three different `max_iter` values): a `plot_bounded:` header and
+   a per-channel render would do it.
+2. **Importance sampling for escape systems** — most Buddhabrot starts are wasted inside the
+   set; a coarse "escape map" of the region (first pass) could bias the starts towards the
+   boundary, a 5–20× speed-up.
+3. **Return-map event on GL points** — `gl_points` skips `on_section` / escape programs; a
+   second update pass could store the pre-event state so the vertex shader can plot it.
+4. **More locales** — the tooling is in place; French/Spanish `.ts` files and the remaining
+   attractor overlays are translation work, not code.
+5. **Per-tile time budgets** — interleaving already keeps tiles uniform; a time-based
+   "finish in N minutes" could set `finish_at` from the measured pass rate.
+6. **Render-preset sharing** — export/import of `render_presets.json` entries as ATR-style
+   codes for pasting into issues/forums.

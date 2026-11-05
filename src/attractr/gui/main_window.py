@@ -42,6 +42,7 @@ from attractr.gui.panels.stats_panel import StatsPanel
 from attractr.gui.panels.timeline_panel import TimelinePanel
 from attractr.gui.state.document import Document
 from attractr.gui.viewport.viewport import Viewport
+from attractr.i18n import tr
 from attractr.version import APP_NAME, __version__
 
 log = logging.getLogger(__name__)
@@ -89,22 +90,23 @@ class MainWindow(QMainWindow):
         self.search_panel = SearchPanel(self.doc)
         self.search_panel.locked_provider = lambda: self.params_panel.locked
         self.gallery_panel = GalleryPanel(self.doc)
+        self.gallery_panel.rerenderRequested.connect(self.rerender_settings)
         self.anim = AnimationController(self.doc, self)
         self.timeline_panel = TimelinePanel(self.doc, self.anim)
         self.timeline_panel.renderRequested.connect(self.show_animate_dialog)
         self.formula_panel.popOutRequested.connect(self._toggle_formula_popout)
-        self._dock("attractors", "Attractors", self.browser, Qt.DockWidgetArea.LeftDockWidgetArea)
-        self._dock("parameters", "Parameters", self.params_panel, Qt.DockWidgetArea.LeftDockWidgetArea)
-        self._dock("presets", "Presets", self.presets_panel, Qt.DockWidgetArea.LeftDockWidgetArea, scroll=True)
-        self._dock("look", "Look", self.look_panel, Qt.DockWidgetArea.RightDockWidgetArea)
-        self._dock("camera", "Camera", self.camera_panel, Qt.DockWidgetArea.RightDockWidgetArea, scroll=True)
-        self._dock("info", "Info", self.info_panel, Qt.DockWidgetArea.RightDockWidgetArea)
-        self._dock("stats", "Statistics", self.stats_panel, Qt.DockWidgetArea.RightDockWidgetArea, scroll=True)
-        self._dock("jobs", "Jobs", self.jobs_panel, Qt.DockWidgetArea.BottomDockWidgetArea, scroll=True)
-        self._dock("formula", "Formula", self.formula_panel, Qt.DockWidgetArea.BottomDockWidgetArea)
-        self._dock("search", "Search", self.search_panel, Qt.DockWidgetArea.BottomDockWidgetArea, scroll=True)
-        self._dock("gallery", "Gallery", self.gallery_panel, Qt.DockWidgetArea.BottomDockWidgetArea, scroll=True)
-        self._dock("timeline", "Timeline", self.timeline_panel, Qt.DockWidgetArea.BottomDockWidgetArea, scroll=True)
+        self._dock("attractors", tr("Attractors"), self.browser, Qt.DockWidgetArea.LeftDockWidgetArea)
+        self._dock("parameters", tr("Parameters"), self.params_panel, Qt.DockWidgetArea.LeftDockWidgetArea)
+        self._dock("presets", tr("Presets"), self.presets_panel, Qt.DockWidgetArea.LeftDockWidgetArea, scroll=True)
+        self._dock("look", tr("Look"), self.look_panel, Qt.DockWidgetArea.RightDockWidgetArea)
+        self._dock("camera", tr("Camera"), self.camera_panel, Qt.DockWidgetArea.RightDockWidgetArea, scroll=True)
+        self._dock("info", tr("Info"), self.info_panel, Qt.DockWidgetArea.RightDockWidgetArea)
+        self._dock("stats", tr("Statistics"), self.stats_panel, Qt.DockWidgetArea.RightDockWidgetArea, scroll=True)
+        self._dock("jobs", tr("Jobs"), self.jobs_panel, Qt.DockWidgetArea.BottomDockWidgetArea, scroll=True)
+        self._dock("formula", tr("Formula"), self.formula_panel, Qt.DockWidgetArea.BottomDockWidgetArea)
+        self._dock("search", tr("Search"), self.search_panel, Qt.DockWidgetArea.BottomDockWidgetArea, scroll=True)
+        self._dock("gallery", tr("Gallery"), self.gallery_panel, Qt.DockWidgetArea.BottomDockWidgetArea, scroll=True)
+        self._dock("timeline", tr("Timeline"), self.timeline_panel, Qt.DockWidgetArea.BottomDockWidgetArea, scroll=True)
         self.tabifyDockWidget(self.docks["formula"], self.docks["timeline"])
         self.tabifyDockWidget(self.docks["formula"], self.docks["search"])
         self.tabifyDockWidget(self.docks["formula"], self.docks["gallery"])
@@ -125,9 +127,9 @@ class MainWindow(QMainWindow):
         self._build_actions()
         self._build_menus()
         self._build_toolbar()
-        self.status_label = QLabel("ready")
+        self.status_label = QLabel(tr("ready"))
         self.hover_label = QLabel("")
-        self.engine_label = QLabel("engine: …")
+        self.engine_label = QLabel(tr("engine: …"))
         self.engine_label.setStyleSheet("color:#4fc3f7; padding: 0 8px;")
         self.statusBar().addWidget(self.status_label, 1)
         self.statusBar().addPermanentWidget(self.hover_label)
@@ -173,72 +175,72 @@ class MainWindow(QMainWindow):
 
     def _build_actions(self) -> None:
         a = self.actions_ = {}
-        a["new"] = QAction("&New", self, shortcut=QKeySequence.StandardKey.New, triggered=self.new_project)
-        a["open"] = QAction("&Open…", self, shortcut=QKeySequence.StandardKey.Open, triggered=self.open_project)
-        a["save"] = QAction("&Save", self, shortcut=QKeySequence.StandardKey.Save, triggered=self.save_project)
-        a["save_as"] = QAction("Save &As…", self, shortcut=QKeySequence.StandardKey.SaveAs, triggered=lambda: self.save_project(True))
-        a["export_svg"] = QAction("Export orbit trace as SVG…", self, triggered=self.export_svg)
-        a["import_image"] = QAction("Import settings from image…", self, triggered=self.import_image)
-        a["quit"] = QAction("&Quit", self, shortcut=QKeySequence.StandardKey.Quit, triggered=self.close)
+        a["new"] = QAction(tr("&New"), self, shortcut=QKeySequence.StandardKey.New, triggered=self.new_project)
+        a["open"] = QAction(tr("&Open…"), self, shortcut=QKeySequence.StandardKey.Open, triggered=self.open_project)
+        a["save"] = QAction(tr("&Save"), self, shortcut=QKeySequence.StandardKey.Save, triggered=self.save_project)
+        a["save_as"] = QAction(tr("Save &As…"), self, shortcut=QKeySequence.StandardKey.SaveAs, triggered=lambda: self.save_project(True))
+        a["export_svg"] = QAction(tr("Export orbit trace as SVG…"), self, triggered=self.export_svg)
+        a["import_image"] = QAction(tr("Import settings from image…"), self, triggered=self.import_image)
+        a["quit"] = QAction(tr("&Quit"), self, shortcut=QKeySequence.StandardKey.Quit, triggered=self.close)
         a["undo"] = self.doc.undo_stack.createUndoAction(self, "&Undo")
         a["undo"].setShortcut(QKeySequence.StandardKey.Undo)
         a["redo"] = self.doc.undo_stack.createRedoAction(self, "&Redo")
         a["redo"].setShortcut(QKeySequence.StandardKey.Redo)
-        a["random"] = QAction("🎲 Randomize parameters", self, shortcut="R", triggered=lambda: self.doc.randomize_params(self.params_panel.locked))
-        a["surprise"] = QAction("✨ Surprise me", self, shortcut="Shift+R", triggered=self.doc.randomize_all)
-        a["mutate"] = QAction("Mutate grid…", self, shortcut="M", triggered=self.show_mutate)
-        a["search"] = QAction("Search…", self, shortcut="Ctrl+F", triggered=lambda: (self.docks["search"].show(), self.docks["search"].raise_()))
-        a["formula"] = QAction("Formula editor", self, shortcut="F4", triggered=lambda: (self.docks["formula"].show(), self.docks["formula"].raise_()))
-        a["gradient"] = QAction("Gradient editor…", self, shortcut="G", triggered=self.look_panel.open_gradient_editor)
-        a["reset_cam"] = QAction("Reset camera", self, shortcut="Home", triggered=self.doc.reset_camera)
-        a["spin"] = QAction("Spin", self, shortcut="Space", checkable=True, triggered=self.viewport.toggle_spin)
-        a["hud"] = QAction("Show HUD", self, shortcut="H", checkable=True, checked=True, triggered=self._toggle_hud)
-        a["render"] = QAction("⬛ Render…", self, shortcut="Ctrl+R", triggered=self.show_render_dialog)
-        a["quick_render"] = QAction("Quick render (2048²)", self, shortcut="Ctrl+Shift+R", triggered=self.quick_render)
-        a["resume_render"] = QAction("Resume render from checkpoint…", self, triggered=self.resume_render)
-        a["batch_render"] = QAction("Batch render folder…", self, triggered=self.batch_render)
-        a["timeline"] = QAction("Timeline", self, shortcut="T", triggered=lambda: (self.docks["timeline"].show(), self.docks["timeline"].raise_()))
-        a["animate"] = QAction("🎞 Render animation…", self, shortcut="Ctrl+Shift+A", triggered=self.show_animate_dialog)
-        a["copy_code"] = QAction("Copy share code", self, shortcut="Ctrl+Shift+C", triggered=self.presets_panel._copy_code)
-        a["copy_cli"] = QAction("Copy CLI command", self, triggered=self.copy_cli_command)
-        a["paste_code"] = QAction("Paste share code", self, shortcut="Ctrl+Shift+V", triggered=self.presets_panel._paste_code)
-        a["prefs"] = QAction("Preferences…", self, triggered=lambda: PreferencesDialog(self).exec() and self._apply_prefs())
-        a["open_folder"] = QAction("Open user folder", self, triggered=lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(user_dir()))))
-        a["about"] = QAction("About Attractr", self, triggered=lambda: AboutDialog(self).exec())
-        a["tips"] = QAction("Tips", self, triggered=self._show_tips)
-        a["docs"] = QAction("Documentation", self, triggered=lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(Path(__file__).resolve().parents[3] / "docs" / "README.md"))))
+        a["random"] = QAction(tr("🎲 Randomize parameters"), self, shortcut="R", triggered=lambda: self.doc.randomize_params(self.params_panel.locked))
+        a["surprise"] = QAction(tr("✨ Surprise me"), self, shortcut="Shift+R", triggered=self.doc.randomize_all)
+        a["mutate"] = QAction(tr("Mutate grid…"), self, shortcut="M", triggered=self.show_mutate)
+        a["search"] = QAction(tr("Search…"), self, shortcut="Ctrl+F", triggered=lambda: (self.docks["search"].show(), self.docks["search"].raise_()))
+        a["formula"] = QAction(tr("Formula editor"), self, shortcut="F4", triggered=lambda: (self.docks["formula"].show(), self.docks["formula"].raise_()))
+        a["gradient"] = QAction(tr("Gradient editor…"), self, shortcut="G", triggered=self.look_panel.open_gradient_editor)
+        a["reset_cam"] = QAction(tr("Reset camera"), self, shortcut="Home", triggered=self.doc.reset_camera)
+        a["spin"] = QAction(tr("Spin"), self, shortcut="Space", checkable=True, triggered=self.viewport.toggle_spin)
+        a["hud"] = QAction(tr("Show HUD"), self, shortcut="H", checkable=True, checked=True, triggered=self._toggle_hud)
+        a["render"] = QAction(tr("⬛ Render…"), self, shortcut="Ctrl+R", triggered=self.show_render_dialog)
+        a["quick_render"] = QAction(tr("Quick render (2048²)"), self, shortcut="Ctrl+Shift+R", triggered=self.quick_render)
+        a["resume_render"] = QAction(tr("Resume render from checkpoint…"), self, triggered=self.resume_render)
+        a["batch_render"] = QAction(tr("Batch render folder…"), self, triggered=self.batch_render)
+        a["timeline"] = QAction(tr("Timeline"), self, shortcut="T", triggered=lambda: (self.docks["timeline"].show(), self.docks["timeline"].raise_()))
+        a["animate"] = QAction(tr("🎞 Render animation…"), self, shortcut="Ctrl+Shift+A", triggered=self.show_animate_dialog)
+        a["copy_code"] = QAction(tr("Copy share code"), self, shortcut="Ctrl+Shift+C", triggered=self.presets_panel._copy_code)
+        a["copy_cli"] = QAction(tr("Copy CLI command"), self, triggered=self.copy_cli_command)
+        a["paste_code"] = QAction(tr("Paste share code"), self, shortcut="Ctrl+Shift+V", triggered=self.presets_panel._paste_code)
+        a["prefs"] = QAction(tr("Preferences…"), self, triggered=lambda: PreferencesDialog(self).exec() and self._apply_prefs())
+        a["open_folder"] = QAction(tr("Open user folder"), self, triggered=lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(user_dir()))))
+        a["about"] = QAction(tr("About Attractr"), self, triggered=lambda: AboutDialog(self).exec())
+        a["tips"] = QAction(tr("Tips"), self, triggered=self._show_tips)
+        a["docs"] = QAction(tr("Documentation"), self, triggered=lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(Path(__file__).resolve().parents[3] / "docs" / "README.md"))))
 
     def _build_menus(self) -> None:
         a = self.actions_
         mb = self.menuBar()
-        m = mb.addMenu("&File")
+        m = mb.addMenu(tr("&File"))
         m.addActions([a["new"], a["open"], a["save"], a["save_as"]])
         m.addSeparator()
         m.addActions([a["import_image"], a["export_svg"]])
         m.addSeparator()
         m.addAction(a["quit"])
-        m = mb.addMenu("&Edit")
+        m = mb.addMenu(tr("&Edit"))
         m.addActions([a["undo"], a["redo"]])
         m.addSeparator()
         m.addActions([a["copy_code"], a["paste_code"], a["copy_cli"]])
         m.addSeparator()
         m.addAction(a["prefs"])
-        m = mb.addMenu("&View")
+        m = mb.addMenu(tr("&View"))
         for d in self.docks.values():
             m.addAction(d.toggleViewAction())
         m.addSeparator()
         m.addActions([a["hud"], a["spin"], a["reset_cam"]])
-        m = mb.addMenu("&Attractor")
+        m = mb.addMenu(tr("&Attractor"))
         m.addActions([a["random"], a["surprise"], a["mutate"], a["search"], a["formula"]])
-        m = mb.addMenu("&Look")
+        m = mb.addMenu(tr("&Look"))
         m.addAction(a["gradient"])
-        m = mb.addMenu("&Render")
+        m = mb.addMenu(tr("&Render"))
         m.addActions([a["render"], a["quick_render"]])
         m.addSeparator()
         m.addActions([a["batch_render"], a["resume_render"]])
-        m = mb.addMenu("&Animate")
+        m = mb.addMenu(tr("&Animate"))
         m.addActions([a["timeline"], a["animate"]])
-        m = mb.addMenu("&Help")
+        m = mb.addMenu(tr("&Help"))
         m.addActions([a["docs"], a["tips"], a["open_folder"], a["about"]])
 
     def _build_toolbar(self) -> None:
@@ -333,7 +335,7 @@ class MainWindow(QMainWindow):
     def open_project(self) -> None:
         if not self._confirm_discard():
             return
-        path, _ = QFileDialog.getOpenFileName(self, "Open project", str(Path.home()), f"Attractr project (*{SUFFIX})")
+        path, _ = QFileDialog.getOpenFileName(self, tr("Open project"), str(Path.home()), f"Attractr project (*{SUFFIX})")
         if path:
             self.load_path(path)
 
@@ -341,12 +343,12 @@ class MainWindow(QMainWindow):
         try:
             self.doc.load(path)
         except Exception as exc:  # noqa: BLE001
-            QMessageBox.critical(self, "Open project", f"Could not open {path}:\n{exc}")
+            QMessageBox.critical(self, tr("Open project"), f"Could not open {path}:\n{exc}")
 
     def save_project(self, save_as: bool = False) -> bool:
         path = self.doc.path
         if save_as or path is None:
-            p, _ = QFileDialog.getSaveFileName(self, "Save project", str(Path.home() / f"{self.doc.spec.id}{SUFFIX}"), f"Attractr project (*{SUFFIX})")
+            p, _ = QFileDialog.getSaveFileName(self, tr("Save project"), str(Path.home() / f"{self.doc.spec.id}{SUFFIX}"), f"Attractr project (*{SUFFIX})")
             if not p:
                 return False
             path = Path(p)
@@ -355,19 +357,19 @@ class MainWindow(QMainWindow):
             self._set_status(f"saved {path}")
             return True
         except Exception as exc:  # noqa: BLE001
-            QMessageBox.critical(self, "Save project", str(exc))
+            QMessageBox.critical(self, tr("Save project"), str(exc))
             return False
 
     def import_image(self) -> None:
         from attractr.core.io.metadata import read_settings
         from attractr.gui.state.document import TAGS_ALL
 
-        path, _ = QFileDialog.getOpenFileName(self, "Import settings from image", "", "Images (*.png)")
+        path, _ = QFileDialog.getOpenFileName(self, tr("Import settings from image"), "", "Images (*.png)")
         if not path:
             return
         s = read_settings(path)
         if s is None:
-            QMessageBox.information(self, "Import", "That image has no Attractr settings embedded.")
+            QMessageBox.information(self, tr("Import"), tr("That image has no Attractr settings embedded."))
             return
         self.doc.apply(s, "Import image settings", TAGS_ALL)
 
@@ -377,20 +379,20 @@ class MainWindow(QMainWindow):
         from attractr.core.io.svg_export import write_svg
 
         s = self.doc.settings
-        path, _ = QFileDialog.getSaveFileName(self, "Export orbit trace as SVG", str(Path.home() / (render_name(s) + ".svg")), "SVG (*.svg)")
+        path, _ = QFileDialog.getSaveFileName(self, tr("Export orbit trace as SVG"), str(Path.home() / (render_name(s) + ".svg")), "SVG (*.svg)")
         if not path:
             return
         try:
             write_svg(s, path, points=int(self.qs.value("svg/points", 20000)))
         except Exception as exc:  # noqa: BLE001
-            QMessageBox.warning(self, "Export SVG", f"Could not export:\n{exc}")
+            QMessageBox.warning(self, tr("Export SVG"), f"Could not export:\n{exc}")
             return
         self._set_status(f"wrote {Path(path).name}")
 
     def _confirm_discard(self) -> bool:
         if not self.doc.dirty:
             return True
-        r = QMessageBox.question(self, "Unsaved changes", "Save the current project first?",
+        r = QMessageBox.question(self, tr("Unsaved changes"), tr("Save the current project first?"),
                                  QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel)
         if r == QMessageBox.StandardButton.Save:
             return self.save_project()
@@ -428,13 +430,13 @@ class MainWindow(QMainWindow):
         out = Path(self.qs.value("render/folder", str(Path.home() / "Attractr"))).expanduser()
         existing = list_checkpoints(out)
         start = str(existing[0]) if existing else str(out / "checkpoints")
-        path, _ = QFileDialog.getOpenFileName(self, "Resume render from checkpoint", start, f"Attractr checkpoints (*{SUFFIX});;All files (*)")
+        path, _ = QFileDialog.getOpenFileName(self, tr("Resume render from checkpoint"), start, f"Attractr checkpoints (*{SUFFIX});;All files (*)")
         if not path:
             return
         try:
             ck = Checkpoint.load(path)
         except Exception as exc:  # noqa: BLE001
-            QMessageBox.warning(self, "Resume render", f"Could not read the checkpoint:\n{exc}")
+            QMessageBox.warning(self, tr("Resume render"), f"Could not read the checkpoint:\n{exc}")
             return
         fmt = self.qs.value("render/report_fmt", "md")
         reports = [fmt] if self.qs.value("render/report", "true") == "true" else []
@@ -448,7 +450,7 @@ class MainWindow(QMainWindow):
         from attractr.gui.dialogs.animate_dialog import AnimateDialog
 
         if not self.anim.timeline.tracks:
-            QMessageBox.information(self, "Render animation", "The timeline is empty — add keyframes or use Helpers ▾ in the Timeline panel first.")
+            QMessageBox.information(self, tr("Render animation"), tr("The timeline is empty — add keyframes or use Helpers ▾ in the Timeline panel first."))
             self.docks["timeline"].show()
             self.docks["timeline"].raise_()
             return
@@ -468,17 +470,17 @@ class MainWindow(QMainWindow):
         from attractr.core.project import batch
         from attractr.core.project.render_presets import render_presets
 
-        folder = QFileDialog.getExistingDirectory(self, "Folder with .attractr / .atr / tagged .png files", str(Path.home()))
+        folder = QFileDialog.getExistingDirectory(self, tr("Folder with .attractr / .atr / tagged .png files"), str(Path.home()))
         if not folder:
             return
         names = render_presets.names()
-        name, ok = QInputDialog.getItem(self, "Batch render", "Render preset:", names, 0, False)
+        name, ok = QInputDialog.getItem(self, tr("Batch render"), tr("Render preset:"), names, 0, False)
         if not ok:
             return
         preset = render_presets.get(name)
         items, skipped = batch.plan(Path(folder), preset)
         if not items:
-            QMessageBox.information(self, "Batch render", "No renderable files found in that folder.")
+            QMessageBox.information(self, tr("Batch render"), tr("No renderable files found in that folder."))
             return
         out = Path(folder) / "renders"
         every = 60.0 * float(self.qs.value("render/checkpoint_minutes", 2.0))
@@ -490,6 +492,16 @@ class MainWindow(QMainWindow):
         if skipped:
             msg += f" · skipped {len(skipped)} file(s)"
         self._set_status(msg)
+
+    def rerender_settings(self, settings_list, preset) -> None:
+        """Queue one render job per settings object with a render preset (Gallery → Re-render…)."""
+        out = Path(self.qs.value("render/folder", str(Path.home() / "Attractr"))).expanduser()
+        every = 60.0 * float(self.qs.value("render/checkpoint_minutes", 2.0))
+        for s in settings_list:
+            self.submit_job(RenderJob(preset.apply(s), out, self.qs.value("render/template", "{name}_{date}_{w}x{h}"),
+                                      fmt=preset.fmt, bit_depth=preset.bit_depth, report_formats=list(preset.report_formats),
+                                      dynamics=preset.dynamics, checkpoint_every=every))
+        self._set_status(f"queued {len(settings_list)} re-render(s) [{preset.name}]")
 
     def _on_queue_idle(self) -> None:
         """Desktop notification when a batch of jobs has finished and the window is not in front."""
@@ -544,13 +556,13 @@ class MainWindow(QMainWindow):
         d = self.docks["formula"]
         if d.isFloating():
             d.setFloating(False)
-            self.formula_panel.btn_popout.setText("⤢ Enlarge")
+            self.formula_panel.btn_popout.setText(tr("⤢ Enlarge"))
         else:
             d.setFloating(True)
             g = self.geometry()
             d.resize(int(g.width() * 0.7), int(g.height() * 0.75))
             d.move(g.x() + int(g.width() * 0.15), g.y() + int(g.height() * 0.12))
-            self.formula_panel.btn_popout.setText("⤓ Dock")
+            self.formula_panel.btn_popout.setText(tr("⤓ Dock"))
         d.show()
         d.raise_()
 
@@ -579,7 +591,7 @@ class MainWindow(QMainWindow):
         try:
             from attractr.core.project.files import Project, save_project
 
-            save_project(Project(self.doc.settings, self.doc.animation, self.doc.notes), self._autosave_path())
+            save_project(Project(self.doc.settings, self.doc.animation, self.doc.notes, history=self.doc.param_history), self._autosave_path())
         except Exception:  # noqa: BLE001
             log.debug("autosave failed", exc_info=True)
 
@@ -587,7 +599,7 @@ class MainWindow(QMainWindow):
         p = self._autosave_path()
         if not p.exists() or QApplication.instance().property("attractr_testing"):
             return
-        r = QMessageBox.question(self, "Recover session", "An autosaved session from a previous run was found. Restore it?",
+        r = QMessageBox.question(self, tr("Recover session"), tr("An autosaved session from a previous run was found. Restore it?"),
                                  QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         if r == QMessageBox.StandardButton.Yes:
             try:
@@ -596,7 +608,7 @@ class MainWindow(QMainWindow):
 
                 self.doc.apply(load_project(p).settings, "Recover autosave", TAGS_ALL)
             except Exception as exc:  # noqa: BLE001
-                QMessageBox.warning(self, "Recover session", str(exc))
+                QMessageBox.warning(self, tr("Recover session"), str(exc))
         p.unlink(missing_ok=True)
 
     # ── layout persistence ─────────────────────────────────────────────────────

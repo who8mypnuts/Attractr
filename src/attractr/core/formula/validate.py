@@ -19,7 +19,7 @@ from attractr.core.formula.ast import (
     all_assigns,
     walk,
 )
-from attractr.core.formula.functions import FUNCTIONS, RESERVED_VARS
+from attractr.core.formula.functions import FUNCTIONS, RESERVED_VARS, START_VARS
 from attractr.core.formula.lexer import FormulaError
 
 
@@ -36,6 +36,7 @@ class Analysis:
     uses_w: bool = False  # 4th state variable in use (w' / dw / w)
     has_plot: bool = False  # plot = ex, ey, ez  (what is drawn instead of x, y, z)
     has_section: bool = False  # section = expr (Poincaré section: plot on sign change)
+    has_event: bool = False  # on_section { … } block present
     warnings: list[str] = field(default_factory=list)
 
 
@@ -65,7 +66,7 @@ def validate(prog: Program) -> Analysis:
                     known.add(a.target)
             continue
         a = stmt
-        known = set(params) | set(temps)
+        known = set(params) | set(temps) | (set(START_VARS) if kind == "escape" else set())
         uses_rand |= _check_expr(a.expr, known, a.line)
         if isinstance(a.expr, Tuple) and a.target != "plot":
             raise FormulaError("an expression list is only allowed after plot =", a.line)
@@ -91,14 +92,47 @@ def validate(prog: Program) -> Analysis:
     _check_required_targets(prog, kind)
     if has_depth and has_plot:
         raise FormulaError("use either depth = … or plot = …, not both")
+    if kind == "escape":
+        for p in prog.params:
+            if p.name in START_VARS:
+                raise FormulaError(f"{p.name!r} is the orbit start in an escape system and cannot be a parameter", p.line)
+        for a in (*all_assigns(prog.body), *prog.on_section):
+            if a.target in START_VARS:
+                raise FormulaError(f"{a.target!r} is the orbit start and cannot be assigned", a.line)
+            if a.target in SPECIAL_TARGETS and any(isinstance(v, Var) and v.name in START_VARS for v in walk(a.expr)):
+                raise FormulaError("x0 / y0 / z0 may only be used in the update statements", a.line)
+    if kind == "escape" and has_section:
+        raise FormulaError("kind: escape cannot combine with section =")
+    for key, lo in (("max_iter", 1), ("min_iter", 0)):
+        if key in prog.header:
+            try:
+                if int(float(prog.header[key])) < lo:
+                    raise ValueError
+            except ValueError:
+                raise FormulaError(f"{key} must be an integer ≥ {lo}") from None
+    has_event = bool(prog.on_section)
+    if has_event:
+        if not has_section:
+            raise FormulaError("on_section needs a section = … statement", prog.on_section[0].line)
+        known = set(params)
+        for a in prog.on_section:
+            if a.target in DERIV_TARGETS or a.target in SPECIAL_TARGETS:
+                raise FormulaError(f"{a.target!r} is not allowed inside on_section (assign x', y', z', w' or temporaries)", a.line)
+            if a.is_temp and (a.target in RESERVED_VARS or a.target in FUNCTIONS or a.target.endswith("'")):
+                raise FormulaError(f"{a.target!r} cannot be assigned inside on_section", a.line)
+            uses_rand |= _check_expr(a.expr, known, a.line)
+            known.add(a.target)
+    if prog.header.get("section_dir", "both").strip().lower() not in ("both", "up", "down"):
+        raise FormulaError("section_dir must be both, up or down")
     dims = _infer_dims(prog, kind, has_depth or has_plot)
     targets = {a.target for a in all_assigns(prog.body)}
     uses_w = ("w'" in targets or "dw" in targets
               or any(isinstance(v, Var) and v.name == "w" for a in all_assigns(prog.body) for v in walk(a.expr)))
     uses_z = dims == 3
+    uses_w = uses_w or any(a.target == "w'" or any(isinstance(v, Var) and v.name == "w" for v in walk(a.expr)) for a in prog.on_section)
     analysis = Analysis(kind, dims, tuple(params), tuple(dict.fromkeys(temps)), uses_rand, has_depth, has_color, uses_z,
-                        uses_w, has_plot, has_section)
-    used = {v.name for a in all_assigns(prog.body) for v in walk(a.expr) if isinstance(v, Var)}
+                        uses_w, has_plot, has_section, has_event)
+    used = {v.name for a in (*all_assigns(prog.body), *prog.on_section) for v in walk(a.expr) if isinstance(v, Var)}
     for p in params:
         if p not in used:
             analysis.warnings.append(f"parameter {p!r} is never used")
@@ -125,12 +159,17 @@ def _infer_kind(prog: Program) -> str:
         raise FormulaError("a system is either a map (x' = …) or a flow (dx = …), not both", line)
     declared = prog.header.get("kind")
     inferred = "ifs" if has_choose else ("flow" if has_deriv else "map")
-    if declared and declared not in ("map", "flow", "ifs"):
-        raise FormulaError(f"unknown kind {declared!r} (map | flow | ifs)")
+    if declared and declared not in ("map", "flow", "ifs", "escape"):
+        raise FormulaError(f"unknown kind {declared!r} (map | flow | ifs | escape)")
     if declared == "flow" and not has_deriv:
         raise FormulaError("kind: flow but no dx/dy/dz statements")
-    if declared in ("map", "ifs") and has_deriv:
+    if declared in ("map", "ifs", "escape") and has_deriv:
         raise FormulaError(f"kind: {declared} but dx/dy/dz statements found")
+    if declared == "escape":
+        if has_choose:
+            raise FormulaError("kind: escape cannot use choose blocks")
+        if "w'" in targets:
+            raise FormulaError("kind: escape: w is the escape count during replay and cannot be assigned")
     if declared == "ifs" and not has_choose:
         # an ifs without choose is just a map; allow it but treat as map
         return "map"

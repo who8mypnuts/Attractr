@@ -47,11 +47,11 @@ class FormulaHighlighter(QSyntaxHighlighter):
 
     def _build(self) -> None:
         r = self.rules = []
-        r.append((QRegularExpression(r"\b(param|choose|and|or|not|int|step)\b"), self.f_keyword))
+        r.append((QRegularExpression(r"\b(param|choose|on_section|and|or|not|int|step)\b"), self.f_keyword))
         r.append((QRegularExpression(r"\b(" + "|".join(sorted(FUNCTIONS, key=len, reverse=True)) + r")(?=\s*\()"), self.f_func))
         r.append((QRegularExpression(r"\b(x|y|z|w)'"), self.f_target))
         r.append((QRegularExpression(r"^\s*(dx|dy|dz|dw|depth|color|plot|section)\b(?=\s*=)"), self.f_target))
-        r.append((QRegularExpression(r"\b(x|y|z|w|t_step|pi|tau)\b(?!')"), self.f_state))
+        r.append((QRegularExpression(r"\b(x|y|z|w|x0|y0|z0|t_step|pi|tau)\b(?!')"), self.f_state))
         if self.params:
             r.append((QRegularExpression(r"\b(" + "|".join(map(re.escape, sorted(self.params, key=len, reverse=True))) + r")\b(?!')"), self.f_param))
         r.append((QRegularExpression(r"\b\d+(\.\d*)?([eE][+-]?\d+)?\b|\.\d+"), self.f_number))

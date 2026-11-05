@@ -48,6 +48,8 @@ TEX_H = 256
 TARGET_PASS_SECONDS = 0.25
 TILE_MAX = 4096
 ACCUM_WARMUP = 64
+INTERLEAVE_ROUNDS = 8
+MIN_FINISH_STEPS = 16
 
 QUAD_VERT = """#version 330
 void main() {
@@ -107,6 +109,10 @@ class GLPointsEngine(Engine):
         notes = ["point splats + float blending"] if ok else ["OpenGL 3.3 required"]
         return EngineCaps(self.id, self.name, device=f"{info.renderer} ({info.vendor})", available=ok, fp64=False,
                           compute=False, max_size=info.max_texture_size, notes=notes)
+
+    def supports(self, spec: AttractorSpec) -> bool:
+        # the vertex-shader plotter cannot run state-changing section events or escape-time systems
+        return not spec.analysis.has_event and spec.kind != "escape"
 
     def close(self) -> None:
         self.pool.release_all()
@@ -184,127 +190,166 @@ class GLPointsEngine(Engine):
         cv_full = np.zeros((Hs, Ws), dtype=np.float32) if needs.color else None
 
         total_steps = math.ceil(budget / n_traj)
-        steps_all = max(1, total_steps * (len(tiles) - plan.skip_tiles))
         done_all = 0
         passes = 0
         t_acc = time.perf_counter()
         last_partial = time.perf_counter()
+        active = [ti for ti in range(len(tiles)) if ti >= plan.skip_tiles]
+        steps_all = max(1, total_steps * len(active))
+        rounds = 1 if len(active) <= 1 else INTERLEAVE_ROUNDS
+        finish_at: int | None = None
 
-        for ti, (tx, ty, tw, th) in enumerate(tiles):
-            if ti < plan.skip_tiles:
-                continue  # complete in the checkpoint
-            cancel.check()
+        # per-tile trajectory textures persist across rounds; accumulators are re-created per visit
+        tile_state: dict[int, dict] = {}
+        for ti in active:
             st = seed_from_points(n_traj, plan.seed, sample_pts, framing.radius * 1e-2)
             state = np.zeros((n_traj, 4), dtype=np.float32)
             state[:, 0], state[:, 1], state[:, 2], state[:, 3] = st.X, st.Y, st.Z, st.W
-            t_base = [0.0]
             tex_state = [ctx.texture((TEX_W, TEX_H), 4, state.tobytes(), dtype="f4") for _ in range(2)]
             tex_rng = [ctx.texture((TEX_W, TEX_H), 1, st.RS.astype(np.uint32).tobytes(), dtype="u4") for _ in range(2)]
             tex_old = ctx.texture((TEX_W, TEX_H), 4, np.zeros((n_traj, 4), dtype=np.float32).tobytes(), dtype="f4")
             for t_ in tex_state + tex_rng + [tex_old]:
                 t_.filter = (moderngl.NEAREST, moderngl.NEAREST)
-            fbo_update = [ctx.framebuffer(color_attachments=[tex_state[i], tex_rng[i], tex_old]) for i in range(2)]
-            tex_acc = ctx.texture((tw, th), 4, dtype="f4")
-            tex_zmin = ctx.texture((tw, th), 4, dtype="f4")
-            fbo_acc = ctx.framebuffer(color_attachments=[tex_acc])
-            fbo_zmin = ctx.framebuffer(color_attachments=[tex_zmin])
-            fbo_acc.clear(0.0, 0.0, 0.0, 0.0)
-            fbo_zmin.clear(1e30, 0.0, 0.0, 0.0)
-            _set(prog.draw, "u_size", (float(tw), float(th)))
-            _set(prog.draw, "u_c", (float(cx - tx), float(cy - ty)))
-            cur = 0
+            tile_state[ti] = {
+                "state": tex_state, "rng": tex_rng, "old": tex_old,
+                "fbo": [ctx.framebuffer(color_attachments=[tex_state[i], tex_rng[i], tex_old]) for i in range(2)],
+                "cur": 0, "t_base": 0.0, "steps_done": 0, "warmed": False,
+            }
 
-            def update() -> None:
-                nonlocal cur
-                nxt = 1 - cur
-                tex_state[cur].use(0)
-                tex_rng[cur].use(1)
-                _set(prog.update, "u_state", 0)
-                _set(prog.update, "u_rng", 1)
-                _set(prog.update, "u_t0", float(t_base[0]))
-                t_base[0] += substeps
-                fbo_update[nxt].use()
-                ctx.disable(moderngl.BLEND)
-                ctx.viewport = (0, 0, TEX_W, TEX_H)
-                prog.vao_quad.render(moderngl.TRIANGLES, vertices=3)
-                cur = nxt
+        def emit_partial(frac: float) -> None:
+            nonlocal last_partial
+            last_partial = time.perf_counter()
+            stats.iterations_done = min(t["steps_done"] for t in tile_state.values()) * n_traj if tile_state else 0
+            stats.accumulate_seconds = time.perf_counter() - t_acc
+            sink(plan.finish(self._assemble(settings, framing, stats, count_full, depth_full, zmin_full, cv_full, ss, False)), frac)
 
-            def draw() -> None:
-                tex_state[cur].use(0)
-                tex_old.use(1)
-                _set(prog.draw, "u_state", 0)
-                _set(prog.draw, "u_old", 1)
-                ctx.enable(moderngl.BLEND)
-                ctx.blend_func = moderngl.ONE, moderngl.ONE
-                ctx.viewport = (0, 0, tw, th)
-                mode = moderngl.LINES if gap_fill else moderngl.POINTS
-                nverts = 2 * n_traj if gap_fill else n_traj
-                _set(prog.draw, "u_line", 1 if gap_fill else 0)
-                fbo_acc.use()
-                ctx.blend_equation = moderngl.FUNC_ADD
-                _set(prog.draw, "u_mode", 0)
-                prog.vao_points.render(mode, vertices=nverts)
-                if needs.zmin:
-                    fbo_zmin.use()
-                    ctx.blend_equation = moderngl.MIN
-                    _set(prog.draw, "u_mode", 1)
-                    prog.vao_points.render(mode, vertices=nverts)
-                    ctx.blend_equation = moderngl.FUNC_ADD
-
-            def readback() -> None:
-                acc = np.frombuffer(tex_acc.read(), dtype=np.float32).reshape(th, tw, 4)
-                count_full[ty : ty + th, tx : tx + tw] = acc[..., 0]
-                if depth_full is not None:
-                    depth_full[ty : ty + th, tx : tx + tw] = acc[..., 1]
-                if cv_full is not None:
-                    cv_full[ty : ty + th, tx : tx + tw] = acc[..., 2]
-                if zmin_full is not None:
-                    z = np.frombuffer(tex_zmin.read(), dtype=np.float32).reshape(th, tw, 4)[..., 0]
-                    zmin_full[ty : ty + th, tx : tx + tw] = np.where(z > 1e29, np.inf, z)
-
-            try:
-                ctx.point_size = 1.0
-                for _ in range(stats.warmup_steps):
-                    update()
-                steps_done = 0
-                batch = 8
-                while steps_done < total_steps:
+        try:
+            for rnd in range(rounds):
+                round_target = math.ceil(total_steps * (rnd + 1) / rounds)
+                for ti in active:
+                    tx, ty, tw, th = tiles[ti]
+                    ts = tile_state[ti]
+                    if finish_at is not None:
+                        round_target = min(round_target, finish_at)
+                    if ts["steps_done"] >= round_target and ts["warmed"]:
+                        continue
                     cancel.check()
-                    if cancel.finishing:  # soft stop: this and every later tile keep the reduced budget
-                        if not stats.finished_early:
-                            stats.finished_early = True
-                            stats.notes.append(f"Finished early on request at {100 * steps_done / total_steps:.0f} % of the budget.")
-                        total_steps = steps_done
-                        break
-                    k = min(batch, total_steps - steps_done)
-                    tp = time.perf_counter()
-                    for _ in range(k):
-                        update()
-                        draw()
-                    ctx.finish()
-                    dtp = time.perf_counter() - tp
-                    steps_done += k
-                    done_all += k
-                    passes += k
-                    if dtp > 0:
-                        batch = int(min(max(2, k * TARGET_PASS_SECONDS / dtp), 512))
-                    frac = done_all / steps_all
-                    tracker.update(0.05 + 0.9 * frac, f"tile {ti + 1}/{len(tiles)} · {done_all * n_traj / 1e6:.1f} M points")
-                    if sink is not None and len(tiles) == 1 and (time.perf_counter() - last_partial > 0.5 or steps_done >= total_steps):
-                        last_partial = time.perf_counter()
+                    tex_acc = ctx.texture((tw, th), 4, dtype="f4")
+                    tex_zmin = ctx.texture((tw, th), 4, dtype="f4")
+                    fbo_acc = ctx.framebuffer(color_attachments=[tex_acc])
+                    fbo_zmin = ctx.framebuffer(color_attachments=[tex_zmin])
+                    if rnd == 0:
+                        fbo_acc.clear(0.0, 0.0, 0.0, 0.0)
+                        fbo_zmin.clear(1e30, 0.0, 0.0, 0.0)
+                    else:  # restore the accumulators of this tile from the host copies
+                        acc = np.zeros((th, tw, 4), dtype=np.float32)
+                        acc[..., 0] = count_full[ty : ty + th, tx : tx + tw]
+                        if depth_full is not None:
+                            acc[..., 1] = depth_full[ty : ty + th, tx : tx + tw]
+                        if cv_full is not None:
+                            acc[..., 2] = cv_full[ty : ty + th, tx : tx + tw]
+                        tex_acc.write(acc.tobytes())
+                        zb = np.zeros((th, tw, 4), dtype=np.float32)
+                        zb[..., 0] = 1e30 if zmin_full is None else np.where(np.isfinite(zmin_full[ty : ty + th, tx : tx + tw]), zmin_full[ty : ty + th, tx : tx + tw], 1e30)
+                        tex_zmin.write(zb.tobytes())
+                    _set(prog.draw, "u_size", (float(tw), float(th)))
+                    _set(prog.draw, "u_c", (float(cx - tx), float(cy - ty)))
+
+                    def update(ts=ts) -> None:
+                        cur = ts["cur"]
+                        nxt = 1 - cur
+                        ts["state"][cur].use(0)
+                        ts["rng"][cur].use(1)
+                        _set(prog.update, "u_state", 0)
+                        _set(prog.update, "u_rng", 1)
+                        _set(prog.update, "u_t0", float(ts["t_base"]))
+                        ts["t_base"] += substeps
+                        ts["fbo"][nxt].use()
+                        ctx.disable(moderngl.BLEND)
+                        ctx.viewport = (0, 0, TEX_W, TEX_H)
+                        prog.vao_quad.render(moderngl.TRIANGLES, vertices=3)
+                        ts["cur"] = nxt
+
+                    def draw(ts=ts, tw=tw, th=th, fbo_acc=fbo_acc, fbo_zmin=fbo_zmin) -> None:
+                        ts["state"][ts["cur"]].use(0)
+                        ts["old"].use(1)
+                        _set(prog.draw, "u_state", 0)
+                        _set(prog.draw, "u_old", 1)
+                        ctx.enable(moderngl.BLEND)
+                        ctx.blend_func = moderngl.ONE, moderngl.ONE
+                        ctx.viewport = (0, 0, tw, th)
+                        mode = moderngl.LINES if gap_fill else moderngl.POINTS
+                        nverts = 2 * n_traj if gap_fill else n_traj
+                        _set(prog.draw, "u_line", 1 if gap_fill else 0)
+                        fbo_acc.use()
+                        ctx.blend_equation = moderngl.FUNC_ADD
+                        _set(prog.draw, "u_mode", 0)
+                        prog.vao_points.render(mode, vertices=nverts)
+                        if needs.zmin:
+                            fbo_zmin.use()
+                            ctx.blend_equation = moderngl.MIN
+                            _set(prog.draw, "u_mode", 1)
+                            prog.vao_points.render(mode, vertices=nverts)
+                            ctx.blend_equation = moderngl.FUNC_ADD
+
+                    def readback(tex_acc=tex_acc, tex_zmin=tex_zmin, tx=tx, ty=ty, tw=tw, th=th) -> None:
+                        acc = np.frombuffer(tex_acc.read(), dtype=np.float32).reshape(th, tw, 4)
+                        count_full[ty : ty + th, tx : tx + tw] = acc[..., 0]
+                        if depth_full is not None:
+                            depth_full[ty : ty + th, tx : tx + tw] = acc[..., 1]
+                        if cv_full is not None:
+                            cv_full[ty : ty + th, tx : tx + tw] = acc[..., 2]
+                        if zmin_full is not None:
+                            z = np.frombuffer(tex_zmin.read(), dtype=np.float32).reshape(th, tw, 4)[..., 0]
+                            zmin_full[ty : ty + th, tx : tx + tw] = np.where(z > 1e29, np.inf, z)
+
+                    try:
+                        ctx.point_size = 1.0
+                        if not ts["warmed"]:
+                            for _ in range(stats.warmup_steps):
+                                update()
+                            ts["warmed"] = True
+                        batch = 8
+                        while ts["steps_done"] < round_target:
+                            cancel.check()
+                            if cancel.finishing and finish_at is None:  # soft stop: every tile ends at this count
+                                finish_at = max(ts["steps_done"], min(total_steps, MIN_FINISH_STEPS))
+                                round_target = min(round_target, finish_at)
+                                stats.finished_early = True
+                                stats.notes.append(f"Finished early on request at {100 * finish_at / total_steps:.0f} % of the budget.")
+                                if ts["steps_done"] >= round_target:
+                                    break
+                            k = min(batch, round_target - ts["steps_done"])
+                            tp = time.perf_counter()
+                            for _ in range(k):
+                                update()
+                                draw()
+                            ctx.finish()
+                            dtp = time.perf_counter() - tp
+                            ts["steps_done"] += k
+                            done_all += k
+                            passes += k
+                            if dtp > 0:
+                                batch = int(min(max(2, k * TARGET_PASS_SECONDS / dtp), 512))
+                            frac = done_all / steps_all
+                            tracker.update(0.05 + 0.9 * frac, f"tile {ti + 1}/{len(tiles)} · round {rnd + 1}/{rounds} · {done_all * n_traj / 1e6:.1f} M points")
+                            if sink is not None and len(active) == 1 and (time.perf_counter() - last_partial > 0.5 or ts["steps_done"] >= total_steps):
+                                readback()
+                                emit_partial(frac)
                         readback()
-                        stats.iterations_done = steps_done * n_traj
-                        stats.accumulate_seconds = time.perf_counter() - t_acc
-                        sink(plan.finish(self._assemble(settings, framing, stats, count_full, depth_full, zmin_full, cv_full, ss, False)), frac)
-                readback()
-                if sink is not None and len(tiles) > 1:  # tile-complete partial (checkpointable)
-                    stats.tiles_done = ti + 1
-                    stats.iterations_done = total_steps * n_traj
-                    stats.accumulate_seconds = time.perf_counter() - t_acc
-                    sink(plan.finish(self._assemble(settings, framing, stats, count_full, depth_full, zmin_full, cv_full, ss, False)), (ti + 1) / len(tiles))
-            finally:
-                for r in (fbo_acc, fbo_zmin, *fbo_update, tex_acc, tex_zmin, tex_old, *tex_state, *tex_rng):
+                    finally:
+                        for r in (fbo_acc, fbo_zmin, tex_acc, tex_zmin):
+                            r.release()
+                if sink is not None and len(active) > 1:
+                    emit_partial(done_all / steps_all)
+                if finish_at is not None and all(t["steps_done"] >= finish_at for t in tile_state.values()):
+                    break
+        finally:
+            for ts in tile_state.values():
+                for r in (*ts["fbo"], ts["old"], *ts["state"], *ts["rng"]):
                     r.release()
+        if finish_at is not None:
+            total_steps = finish_at
 
         stats.accumulate_seconds = time.perf_counter() - t_acc
         stats.iterations_done = total_steps * n_traj

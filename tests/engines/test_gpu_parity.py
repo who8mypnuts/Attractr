@@ -51,3 +51,50 @@ def test_gl_points_matches_cpu_loosely(aid):
     assert gpu.stats.engine == "gl_points"
     assert abs(gpu.stats.coverage - cpu.stats.coverage) < 0.08
     assert _js_divergence(gpu.count, cpu.count) < 0.15
+
+
+def test_tiled_render_is_interleaved_and_uniform(monkeypatch):
+    """Tiles are visited in rounds: partials, checkpoints and 'Finish now' are uniform."""
+    from dataclasses import replace
+
+    from attractr.core.jobs.cancel import CancelToken
+    from attractr.core.render.engines import gl_engines
+    from attractr.core.render.pipeline import accumulate
+
+    caps = selector.probe("gl_compute")
+    if not caps.available:
+        pytest.skip(f"gl_compute unavailable: {caps.notes}")
+    monkeypatch.setattr(gl_engines, "TILE_BUDGET_BYTES", 256 * 256 * 4 * 8)  # → 4 tiles of 256²
+    spec = registry.get("clifford")
+    s = default_settings(spec, Quality(width=512, height=512, points_per_pixel=20, engine="gl_compute"))
+    s = replace(s, look=replace(s.look, style="liquid"))
+    tok = CancelToken()
+    fracs = []
+
+    def sink(res, frac):
+        fracs.append(frac)
+        if frac > 0.3 and not tok.finishing:
+            tok.finish()
+
+    res = accumulate(s, engine="gl_compute", cancel=tok, sink=sink)
+    assert res.stats.tiles == 4 and res.stats.finished_early
+    assert fracs[:2] == [0.125, 0.25]  # one uniform partial per round
+    q = [res.count[:256, :256].sum(), res.count[:256, 256:].sum(), res.count[256:, :256].sum(), res.count[256:, 256:].sum()]
+    full = accumulate(s, engine="gl_compute")
+    f = [full.count[:256, :256].sum(), full.count[:256, 256:].sum(), full.count[256:, :256].sum(), full.count[256:, 256:].sum()]
+    ratios = [a / b for a, b in zip(q, f, strict=True)]
+    assert max(ratios) - min(ratios) < 0.05 and 0.25 < ratios[0] < 0.6
+
+
+@pytest.mark.parametrize("engine_id", ["gl_compute", "opencl"])
+def test_escape_kind_gpu_matches_cpu(engine_id):
+    caps = selector.probe(engine_id)
+    if not caps.available:
+        pytest.skip(f"{engine_id} unavailable: {caps.notes}")
+    spec = registry.get("buddhabrot")
+    s = default_settings(spec, Quality(width=96, height=96, points_per_pixel=60))
+    gpu = selector.get_engine(engine_id).accumulate(s, spec)
+    cpu = selector.get_engine("cpu").accumulate(s, spec)
+    assert abs(gpu.stats.coverage - cpu.stats.coverage) < 0.08
+    assert _js_divergence(gpu.count, cpu.count) < 0.08
+    assert not selector.get_engine("gl_points").supports(spec) if "gl_points" in selector.engine_ids() else True

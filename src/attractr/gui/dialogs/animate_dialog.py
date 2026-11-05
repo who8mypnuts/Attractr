@@ -31,6 +31,7 @@ from attractr.core.jobs.progress import ProgressTracker
 from attractr.core.render.engines import selector
 from attractr.core.render.settings import RenderSettings
 from attractr.gui.dialogs.render_dialog import QUALITY_TIERS, SIZE_PRESETS
+from attractr.i18n import tr
 
 
 class AnimationJob(Job):
@@ -52,13 +53,13 @@ class AnimateDialog(QDialog):
 
     def __init__(self, get_base, get_timeline, parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Render animation")
+        self.setWindowTitle(tr("Render animation"))
         self.setModal(False)
         self.get_base, self.get_timeline = get_base, get_timeline
         qs = QSettings()
         lay = QVBoxLayout(self)
 
-        g = QGroupBox("Frames")
+        g = QGroupBox(tr("Frames"))
         f = QFormLayout(g)
         self.size_preset = QComboBox()
         for name, w, h in SIZE_PRESETS:
@@ -69,7 +70,7 @@ class AnimateDialog(QDialog):
         self.height.setRange(16, 8192)
         row = QHBoxLayout()
         row.addWidget(self.width)
-        row.addWidget(QLabel("×"))
+        row.addWidget(QLabel(tr("×")))
         row.addWidget(self.height)
         self.tier = QComboBox()
         for name, ppp in QUALITY_TIERS:
@@ -77,7 +78,7 @@ class AnimateDialog(QDialog):
         self.ppp = QDoubleSpinBox()
         self.ppp.setRange(0.1, 1000)
         self.engine = QComboBox()
-        self.engine.addItem("auto", "auto")
+        self.engine.addItem(tr("auto"), "auto")
         for eid in selector.engine_ids():
             self.engine.addItem(eid, eid)
         self.ss = QSpinBox()
@@ -85,22 +86,22 @@ class AnimateDialog(QDialog):
         self.ss.setValue(1)
         self.blur = QSpinBox()
         self.blur.setRange(1, 8)
-        self.blur.setToolTip("Motion blur: sub-frame samples averaged per frame (multiplies render time)")
-        self.lock = QCheckBox("Lock framing across the whole animation")
+        self.blur.setToolTip(tr("Motion blur: sub-frame samples averaged per frame (multiplies render time)"))
+        self.lock = QCheckBox(tr("Lock framing across the whole animation"))
         self.lock.setChecked(True)
         self.info = QLabel("")
-        f.addRow("Size preset", self.size_preset)
-        f.addRow("Pixels", row)
-        f.addRow("Quality tier", self.tier)
-        f.addRow("Points / pixel", self.ppp)
-        f.addRow("Engine", self.engine)
-        f.addRow("Supersampling", self.ss)
-        f.addRow("Motion blur", self.blur)
+        f.addRow(tr("Size preset"), self.size_preset)
+        f.addRow(tr("Pixels"), row)
+        f.addRow(tr("Quality tier"), self.tier)
+        f.addRow(tr("Points / pixel"), self.ppp)
+        f.addRow(tr("Engine"), self.engine)
+        f.addRow(tr("Supersampling"), self.ss)
+        f.addRow(tr("Motion blur"), self.blur)
         f.addRow(self.lock)
         f.addRow("", self.info)
         lay.addWidget(g)
 
-        g = QGroupBox("Output")
+        g = QGroupBox(tr("Output"))
         f = QFormLayout(g)
         row = QHBoxLayout()
         self.folder = QLineEdit(qs.value("anim/folder", str(Path.home() / "Attractr" / "animations")))
@@ -109,14 +110,14 @@ class AnimateDialog(QDialog):
         row.addWidget(self.folder, 1)
         row.addWidget(self.btn_folder)
         self.name = QLineEdit(qs.value("anim/name", "anim"))
-        self.resume = QCheckBox("Resume (skip existing frames)")
+        self.resume = QCheckBox(tr("Resume (skip existing frames)"))
         self.resume.setChecked(True)
-        f.addRow("Folder", row)
-        f.addRow("Name", self.name)
+        f.addRow(tr("Folder"), row)
+        f.addRow(tr("Name"), self.name)
         f.addRow(self.resume)
         lay.addWidget(g)
 
-        g = QGroupBox("Encode")
+        g = QGroupBox(tr("Encode"))
         f = QFormLayout(g)
         self.preset = QComboBox()
         for k, v in PRESETS.items():
@@ -124,18 +125,18 @@ class AnimateDialog(QDialog):
         self.crf = QSpinBox()
         self.crf.setRange(0, 51)
         self.crf.setValue(18)
-        self.crf.setToolTip("Constant rate factor — lower is higher quality / bigger (H.264/H.265/VP9)")
+        self.crf.setToolTip(tr("Constant rate factor — lower is higher quality / bigger (H.264/H.265/VP9)"))
         ff = find_ffmpeg(qs.value("ffmpeg/path", "") or None)
         self.ff_label = QLabel(f"ffmpeg: {ff}" if ff else "ffmpeg not found — only PNG frames will be written")
         self.ff_label.setStyleSheet("color:#9aa5b1" if ff else "color:#ff7a7a")
-        f.addRow("Format", self.preset)
-        f.addRow("CRF", self.crf)
+        f.addRow(tr("Format"), self.preset)
+        f.addRow(tr("CRF"), self.crf)
         f.addRow(self.ff_label)
         lay.addWidget(g)
 
         btns = QHBoxLayout()
-        self.btn_render = QPushButton("▶ Render animation")
-        self.btn_close = QPushButton("Close")
+        self.btn_render = QPushButton(tr("▶ Render animation"))
+        self.btn_close = QPushButton(tr("Close"))
         btns.addStretch(1)
         btns.addWidget(self.btn_render)
         btns.addWidget(self.btn_close)
@@ -178,7 +179,7 @@ class AnimateDialog(QDialog):
         self.info.setText(f"{tl.frame_count} frames × {pts / 1e6:.0f} M points = {tl.frame_count * pts / 1e9:.1f} G points")
 
     def _pick_folder(self) -> None:
-        d = QFileDialog.getExistingDirectory(self, "Output folder", self.folder.text())
+        d = QFileDialog.getExistingDirectory(self, tr("Output folder"), self.folder.text())
         if d:
             self.folder.setText(d)
 

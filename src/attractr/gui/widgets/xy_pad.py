@@ -8,6 +8,7 @@ from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QVBoxLayout, QWidg
 
 from attractr.core.attractors.spec import AttractorSpec
 from attractr.gui.state.document import Document
+from attractr.i18n import tr
 
 
 class PadArea(QWidget):
@@ -76,9 +77,9 @@ class XYPad(QWidget):
         row = QHBoxLayout()
         self.cx = QComboBox()
         self.cy = QComboBox()
-        row.addWidget(QLabel("X"))
+        row.addWidget(QLabel(tr("X")))
         row.addWidget(self.cx, 1)
-        row.addWidget(QLabel("Y"))
+        row.addWidget(QLabel(tr("Y")))
         row.addWidget(self.cy, 1)
         lay.addLayout(row)
         self.pad = PadArea()

@@ -76,5 +76,9 @@ class Engine(ABC):
         resume: Checkpoint | None = None,
     ) -> RenderResult: ...
 
+    def supports(self, spec: AttractorSpec) -> bool:
+        """False when this engine cannot run the program (the selector then skips it)."""
+        return True
+
     def close(self) -> None:  # release GPU contexts etc.
         return None

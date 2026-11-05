@@ -1,0 +1,52 @@
+# Buddhabrot
+
+`buddhabrot` · escape · 2-D · family: Escape
+
+![Buddhabrot](images/buddhabrot.png)
+
+Melinda Green's Buddhabrot (1993): the Mandelbrot iteration z → z² + c started from random points c of the plane, keeping only the orbits that escape and plotting every point they visited. Where the Mandelbrot set is black, the paths of the escaping orbits pile up into the seated figure. Colour by w (the escape count) with "color = w" or the formula colour source.
+
+## Equations
+
+```text
+x′ = re_pow(x, y, power) + x0
+y′ = im_pow(x, y, power) + y0
+color = w
+```
+
+## Parameters
+
+| Name | Default | Range | Meaning |
+|---|---|---|---|
+| power | 2 | [2, 6] | Exponent of the iteration z → zⁿ + c (2 is the Mandelbrot set). |
+
+## References
+
+- M. Green, "The Buddhabrot Technique" (1993); Wikipedia, "Buddhabrot"
+
+## Source (`.atr`)
+
+```text
+name: Buddhabrot
+family: Escape
+desc: Melinda Green's Buddhabrot (1993): the Mandelbrot iteration z → z² + c started from random points c of the plane, keeping only the orbits that escape and plotting every point they visited. Where the Mandelbrot set is black, the paths of the escaping orbits pile up into the seated figure. Colour by w (the escape count) with "color = w" or the formula colour source.
+ref: M. Green, "The Buddhabrot Technique" (1993); Wikipedia, "Buddhabrot"
+tags: escape, fractal, 2d, classic
+kind: escape
+dims: 2
+region: -2.2 1.2 -1.7 1.7
+bailout: 2
+max_iter: 500
+min_iter: 20
+camera: 0 0 -90 1
+boost: 20
+palette: ice
+
+param power = 2 [2, 6] int "Exponent of the iteration z → zⁿ + c (2 is the Mandelbrot set)."
+
+x' = re_pow(x, y, power) + x0
+y' = im_pow(x, y, power) + y0
+color = w
+```
+
+Render it: `attractr render buddhabrot --size 2048x2048 --report md`

@@ -101,6 +101,27 @@ def _color_value(code, qx, qy, qz, speed, radius, curv, idx_frac, fx, fy, fz, fw
 
 
 @njit(cache=True, nogil=True, inline="always")
+def _crossed(sv, psec):
+    """Section crossing test honouring SECTION_DIR (0 both, 1 upward − → +, 2 downward)."""
+    if not (sv * psec < 0.0):
+        return False
+    if SECTION_DIR == 1:
+        return sv > 0.0
+    if SECTION_DIR == 2:
+        return sv < 0.0
+    return True
+
+
+@njit(cache=True, nogil=True, inline="always")
+def _escape_start(RS, i, esc):
+    """A uniformly random orbit start inside the escape region box."""
+    x0 = esc[0] + _rand(RS, i) * (esc[1] - esc[0])
+    y0 = esc[2] + _rand(RS, i) * (esc[3] - esc[2])
+    z0 = esc[4] + _rand(RS, i) * (esc[5] - esc[4])
+    return x0, y0, z0
+
+
+@njit(cache=True, nogil=True, inline="always")
 def _reseed(X, Y, Z, W, RS, i, ic, jitter):
     X[i] = ic[0] + (_rand(RS, i) - 0.5) * jitter
     Y[i] = ic[1] + (_rand(RS, i) - 0.5) * jitter
@@ -116,10 +137,16 @@ def accumulate(
     R, center, inv_radius, cx, cy, focal, persp, Ws, Hs,
     kern, gap_fill, color_code, do_plot,
     cnt, dep, zmn, cvb, restarts, plotted, ic, jitter,
+    SX, SY, SZ, EMODE, ECNT, ENREP, esc,
 ):
     """Run trajectories [lo, hi) for ``steps`` steps, depositing into buffer slice ``t``.
     Called from several Python threads at once (nogil) with disjoint slices.  The buffer
-    set and splat radius are compile-time constants of this kernel variant."""
+    set and splat radius are compile-time constants of this kernel variant.
+
+    Escape-time systems (``KIND_ESCAPE``) carry per-trajectory orbit state: the start point
+    ``SX/SY/SZ``, ``EMODE`` (0 probing, 1 replaying), ``ECNT`` (steps in the current phase),
+    ``ENREP`` (points to replay) and ``esc = [xmin, xmax, ymin, ymax, zmin, zmax, bailout²,
+    max_iter, min_iter]``."""
     n = X.shape[0]
     inv_n = 1.0 / max(n, 1)
     plotted_t = 0.0
@@ -137,6 +164,12 @@ def accumulate(
         dxp = DXp[i]
         dyp = DYp[i]
         dzp = DZp[i]
+        sx0 = SX[i]
+        sy0 = SY[i]
+        sz0 = SZ[i]
+        emode = EMODE[i]
+        ecnt = ECNT[i]
+        enrep = ENREP[i]
         tstep = t0
         idx_frac = i * inv_n
         for s in range(steps):
@@ -144,34 +177,95 @@ def accumulate(
             oy = y
             oz = z
             for _k in range(substeps):
-                x, y, z, w = step(x, y, z, w, p, RS, i, tstep, dt)
+                x, y, z, w = step(x, y, z, w, p, RS, i, tstep, dt, sx0, sy0, sz0)
                 tstep += 1.0
-            # ── divergence guard ───────────────────────────────────────────────
-            if not (math.isfinite(x) and math.isfinite(y) and math.isfinite(z) and math.isfinite(w)) or (
-                abs(x) > DIVERGE_LIMIT or abs(y) > DIVERGE_LIMIT or abs(z) > DIVERGE_LIMIT or abs(w) > DIVERGE_LIMIT
-            ):
-                _reseed(X, Y, Z, W, RS, i, ic, jitter)
-                x = X[i]
-                y = Y[i]
-                z = Z[i]
-                w = W[i]
-                restarts_t += 1
-                have = 0
-                continue
-            if not do_plot:
-                continue
-            if HAS_SECTION:  # Poincaré section: plot only when the section function changes sign
-                sv = section_fn(x, y, z, w, p)
-                crossed = sv * psec < 0.0
-                psec = sv
-                if not crossed:
+            if KIND_ESCAPE:
+                # ── escape-time orbit state machine ────────────────────────────
+                ecnt += 1
+                finite = math.isfinite(x) and math.isfinite(y) and math.isfinite(z)
+                if emode == 0:  # probing: nothing is drawn until the orbit is known to escape
+                    if (not finite) or x * x + y * y + z * z > esc[6]:
+                        if ecnt - 1 >= esc[8] and ecnt > 1:  # replay the ecnt−1 bounded points
+                            emode = 1
+                            enrep = ecnt - 1
+                            ecnt = 0
+                            x = sx0
+                            y = sy0
+                            z = sz0
+                            w = float(enrep)
+                        else:
+                            sx0, sy0, sz0 = _escape_start(RS, i, esc)
+                            x = sx0
+                            y = sy0
+                            z = sz0
+                            ecnt = 0
+                    elif ecnt >= esc[7]:  # bounded for max_iter steps: inside the set, discard
+                        sx0, sy0, sz0 = _escape_start(RS, i, esc)
+                        x = sx0
+                        y = sy0
+                        z = sz0
+                        ecnt = 0
+                    have = 0
                     continue
-            if HAS_PLOT:
-                fx, fy, fz = plot_fn(x, y, z, w, p)
+                # replaying: this point is drawn; afterwards maybe start a new orbit
+                sx = x
+                sy = y
+                sz = z
+                sw = w
+                if ecnt >= enrep or not finite:
+                    emode = 0
+                    sx0, sy0, sz0 = _escape_start(RS, i, esc)
+                    x = sx0
+                    y = sy0
+                    z = sz0
+                    ecnt = 0
+                    have_next = 0
+                else:
+                    have_next = 1
+                if not do_plot:
+                    have = 0
+                    continue
+                fx = sx
+                fy = sy
+                fz = sz
+                if HAS_PLOT:
+                    fx, fy, fz = plot_fn(sx, sy, sz, sw, p)
             else:
-                fx = x
-                fy = y
-                fz = z
+                # ── divergence guard ───────────────────────────────────────────
+                if not (math.isfinite(x) and math.isfinite(y) and math.isfinite(z) and math.isfinite(w)) or (
+                    abs(x) > DIVERGE_LIMIT or abs(y) > DIVERGE_LIMIT or abs(z) > DIVERGE_LIMIT or abs(w) > DIVERGE_LIMIT
+                ):
+                    _reseed(X, Y, Z, W, RS, i, ic, jitter)
+                    x = X[i]
+                    y = Y[i]
+                    z = Z[i]
+                    w = W[i]
+                    restarts_t += 1
+                    have = 0
+                    continue
+                if HAS_SECTION:  # Poincaré section: plot only when the section function changes sign
+                    sv = section_fn(x, y, z, w, p)
+                    crossed = _crossed(sv, psec)
+                    psec = sv
+                    if not crossed:
+                        continue
+                if not do_plot:
+                    if HAS_EVENT:
+                        x, y, z, w = event_fn(x, y, z, w, p, RS, i)
+                    continue
+                if HAS_PLOT:
+                    fx, fy, fz = plot_fn(x, y, z, w, p)
+                else:
+                    fx = x
+                    fy = y
+                    fz = z
+                sx = x  # state at the plotted point (the on_section event may change x, y, z, w below)
+                sy = y
+                sz = z
+                sw = w
+                have_next = 1
+                if HAS_EVENT:
+                    x, y, z, w = event_fn(x, y, z, w, p, RS, i)
             # ── project ───────────────────────────────────────────────────────
             ux = (fx - center[0]) * inv_radius
             uy = (fy - center[1]) * inv_radius
@@ -190,9 +284,9 @@ def accumulate(
             # ── colour value ───────────────────────────────────────────────────
             cv = 0.0
             if WANT_COLOR:
-                ddx = x - ox
-                ddy = y - oy
-                ddz = z - oz
+                ddx = sx - ox
+                ddy = sy - oy
+                ddz = sz - oz
                 speed = math.sqrt(ddx * ddx + ddy * ddy + ddz * ddz) * inv_radius
                 curv = 0.5
                 if color_code == 8:
@@ -209,7 +303,7 @@ def accumulate(
                     dyp = ddy
                     dzp = ddz
                 radius = math.sqrt(qx * qx + qy * qy + qz * qz)
-                cv = _color_value(color_code, qx, qy, qz, speed, radius, curv, idx_frac, x, y, z, w, p)
+                cv = _color_value(color_code, qx, qy, qz, speed, radius, curv, idx_frac, sx, sy, sz, sw, p)
             # ── splat (with optional gap filling to the previous point) ────────
             nseg = 1
             if gap_fill and have != 0:
@@ -233,12 +327,18 @@ def accumulate(
             pu = u
             pv = v
             pc = cv
-            have = 1
+            have = have_next
         X[i] = x
         Y[i] = y
         Z[i] = z
         W[i] = w
         SEC[i] = psec
+        SX[i] = sx0
+        SY[i] = sy0
+        SZ[i] = sz0
+        EMODE[i] = emode
+        ECNT[i] = ecnt
+        ENREP[i] = enrep
         PU[i] = pu
         PV[i] = pv
         PC[i] = pc
@@ -266,7 +366,7 @@ def sample_points(X, Y, Z, W, SEC, RS, p, dt, substeps, steps, t0, out, restarts
         tstep = t0
         for s in range(steps):
             for _k in range(substeps):
-                x, y, z, w = step(x, y, z, w, p, RS, i, tstep, dt)
+                x, y, z, w = step(x, y, z, w, p, RS, i, tstep, dt, x, y, z)
                 tstep += 1.0
             if not (math.isfinite(x) and math.isfinite(y) and math.isfinite(z) and math.isfinite(w)) or (
                 abs(x) > DIVERGE_LIMIT or abs(y) > DIVERGE_LIMIT or abs(z) > DIVERGE_LIMIT or abs(w) > DIVERGE_LIMIT
@@ -286,7 +386,7 @@ def sample_points(X, Y, Z, W, SEC, RS, p, dt, substeps, steps, t0, out, restarts
             out[i * steps + s, 3] = w
             if HAS_SECTION:
                 sv = section_fn(x, y, z, w, p)
-                crossed = sv * psec < 0.0
+                crossed = _crossed(sv, psec)
                 psec = sv
                 if not crossed:
                     out[i * steps + s, 4] = np.nan
@@ -302,6 +402,8 @@ def sample_points(X, Y, Z, W, SEC, RS, p, dt, substeps, steps, t0, out, restarts
             out[i * steps + s, 4] = fx
             out[i * steps + s, 5] = fy
             out[i * steps + s, 6] = fz
+            if HAS_EVENT:
+                x, y, z, w = event_fn(x, y, z, w, p, RS, i)
         X[i] = x
         Y[i] = y
         Z[i] = z
@@ -324,8 +426,8 @@ def lyapunov_kernel(x, y, z, w, p, RS, dt, substeps, steps, d0, renorm_every):
     tstep = 0.0
     for s in range(steps):
         for _k in range(substeps):
-            x, y, z, w = step(x, y, z, w, p, RS, 0, tstep, dt)
-            x2, y2, z2, w2 = step(x2, y2, z2, w2, p, RS, 1, tstep, dt)
+            x, y, z, w = step(x, y, z, w, p, RS, 0, tstep, dt, x, y, z)
+            x2, y2, z2, w2 = step(x2, y2, z2, w2, p, RS, 1, tstep, dt, x2, y2, z2)
             tstep += 1.0
         if not (math.isfinite(x) and math.isfinite(y) and math.isfinite(z) and math.isfinite(w)) or abs(x) > DIVERGE_LIMIT or abs(y) > DIVERGE_LIMIT or abs(z) > DIVERGE_LIMIT or abs(w) > DIVERGE_LIMIT:
             return total, renorms, 1

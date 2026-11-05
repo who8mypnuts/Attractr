@@ -22,7 +22,7 @@ from attractr.core.render.accumulators import color_value_range, needs_for
 from attractr.core.render.checkpoint import Checkpoint
 from attractr.core.render.engines import selector
 from attractr.core.render.engines.base import Engine, EngineCaps, PassSink, resume_plan
-from attractr.core.render.engines.cpu_numba import apply_lock, downsample, effective_camera, splat_kernel
+from attractr.core.render.engines.cpu_numba import apply_lock, downsample, effective_camera, escape_config, splat_kernel
 from attractr.core.render.engines.gl_common import (
     GLContextPool,
     GLUnavailable,
@@ -47,6 +47,8 @@ MAX_STEPS_PER_PASS = 256  # keeps 24.8 fixed-point sums below 2^32 per pass
 TARGET_PASS_SECONDS = 0.3
 TILE_BUDGET_BYTES = int(float(os.environ.get("ATTRACTR_GPU_BUDGET_MB", "768")) * 1024 * 1024)
 ACCUM_WARMUP = 64
+INTERLEAVE_ROUNDS = 8  # tiled renders visit every tile this many times so progress stays uniform
+MIN_FINISH_STEPS = 16  # "Finish now" never leaves a tile with fewer steps than this
 
 
 def _set(prog, name: str, value) -> None:
@@ -190,6 +192,10 @@ class GLComputeEngine(Engine):
         _set(it, "u_gap_fill", 1 if (q.gap_fill and spec.plots_continuous) else 0)
         _set(it, "u_color_code", int(needs.color_code))
         _set(it, "u_ic", tuple(float(v) for v in spec.ic))
+        esc_cfg = escape_config(spec)
+        _set(it, "u_esc_lo", tuple(float(v) for v in esc_cfg[0:6:2]))
+        _set(it, "u_esc_hi", tuple(float(v) for v in esc_cfg[1:6:2]))
+        _set(it, "u_esc_cfg", tuple(float(v) for v in esc_cfg[6:9]))
         _set(it, "u_jitter", float(spec.jitter))
         _set(it, "u_inv_n", float(1.0 / n_traj))
         cv_lo, cv_hi = color_value_range(needs.color_code, sample_pts, framing, cam.matrix(), params, cf.color_fn) if needs.color else (-4.0, 4.0)
@@ -207,105 +213,132 @@ class GLComputeEngine(Engine):
         steps_per_pass = 16
         last_partial = time.perf_counter()
         done_steps_all = 0
-        steps_all = max(1, total_steps * (len(tiles) - plan.skip_tiles))
+        active = [ti for ti in range(len(tiles)) if ti >= plan.skip_tiles]  # complete tiles of a legacy checkpoint are skipped
+        steps_all = max(1, total_steps * len(active))
+        rounds = 1 if len(active) <= 1 else INTERLEAVE_ROUNDS
+        finish_at: int | None = None  # per-tile step count everything stops at after "Finish now"
 
-        for ti, (tx, ty, tw, th) in enumerate(tiles):
-            if ti < plan.skip_tiles:
-                continue  # complete in the checkpoint
-            cancel.check()
-            # trajectories restart identically per tile → deterministic, seamless tiles
+        # per-tile trajectory state lives for the whole render (small); the big images are
+        # re-created per visit, so tiles are interleaved in rounds and progress uniformly
+        tile_state: dict[int, dict] = {}
+        for ti in active:
             st = seed_from_points(n_traj, plan.seed, sample_pts, framing.radius * 1e-2)
             state = np.zeros((n_traj, 4), dtype=np.float64 if fp64 else np.float32)
             state[:, 0], state[:, 1], state[:, 2], state[:, 3] = st.X, st.Y, st.Z, st.W
-            t_base = [0.0]
-            b_state = ctx.buffer(state.tobytes())
-            b_rng = ctx.buffer(st.RS.astype(np.uint32).tobytes())
-            b_prev = ctx.buffer(np.zeros((n_traj, 4), dtype=np.float32).tobytes())
-            b_prevd = ctx.buffer(np.zeros((n_traj, 4), dtype=np.float32).tobytes())
-            b_stats = ctx.buffer(np.zeros(4, dtype=np.uint32).tobytes())
-            imgs = self._make_images(ctx, tw, th, needs)
-            try:
-                b_state.bind_to_storage_buffer(0)
-                b_rng.bind_to_storage_buffer(1)
-                b_prev.bind_to_storage_buffer(2)
-                b_prevd.bind_to_storage_buffer(3)
-                b_stats.bind_to_storage_buffer(4)
-                for u, (tex, _) in enumerate(imgs["uint"]):
-                    tex.bind_to_image(u, read=True, write=True)
-                _set(it, "u_size", (tw, th))
-                _set(it, "u_c", (float(cx - tx), float(cy - ty)))
+            tile_state[ti] = {
+                "state": ctx.buffer(state.tobytes()), "rng": ctx.buffer(st.RS.astype(np.uint32).tobytes()),
+                "prev": ctx.buffer(np.zeros((n_traj, 4), dtype=np.float32).tobytes()),
+                "prevd": ctx.buffer(np.zeros((n_traj, 4), dtype=np.float32).tobytes()),
+                "stats": ctx.buffer(np.zeros(4, dtype=np.uint32).tobytes()),
+                "esc": ctx.buffer(st.escape_state().tobytes()),
+                "t_base": 0.0, "steps_done": 0, "warmed": False,
+            }
 
-                def dispatch(steps: int, plot: int) -> None:
-                    _set(it, "u_steps", int(steps))
-                    _set(it, "u_t0", float(t_base[0]))
-                    _set(it, "u_flags", (int(needs.depth), int(needs.zmin), int(needs.color), plot))
-                    it.run(group_x=groups)
-                    ctx.memory_barrier()
-                    t_base[0] += steps * substeps
+        def emit_partial(frac: float) -> None:
+            nonlocal last_partial
+            last_partial = time.perf_counter()
+            stats.iterations_done = min(t["steps_done"] for t in tile_state.values()) * n_traj if tile_state else 0
+            stats.accumulate_seconds = time.perf_counter() - t_acc
+            partial = self._assemble(settings, framing, stats, count_full, depth_full, zmin_full, cv_full, ss, False)
+            sink(plan.finish(partial), frac)
 
-                def merge() -> None:
-                    m = prog.merge
-                    for u, (tex, _) in enumerate(imgs["uint"]):
-                        tex.bind_to_image(u, read=True, write=True)
-                    for u, (tex, _) in enumerate(imgs["float"]):
-                        tex.bind_to_image(4 + u, read=True, write=True)
-                    _set(m, "u_size", (tw, th))
-                    _set(m, "u_flags", (int(needs.depth), int(needs.zmin), int(needs.color), 0))
-                    m.run(group_x=(tw + 15) // 16, group_y=(th + 15) // 16)
-                    ctx.memory_barrier()
-
-                # warm-up (not plotted)
-                warm = stats.warmup_steps
-                while warm > 0:
-                    k = min(warm, MAX_STEPS_PER_PASS)
-                    dispatch(k, 0)
-                    warm -= k
-                b_prev.write(np.zeros((n_traj, 4), dtype=np.float32).tobytes())
-                # passes
-                steps_done = 0
-                while steps_done < total_steps:
+        try:
+            for rnd in range(rounds):
+                round_target = math.ceil(total_steps * (rnd + 1) / rounds)
+                for ti in active:
+                    tx, ty, tw, th = tiles[ti]
+                    ts = tile_state[ti]
+                    if finish_at is not None:
+                        round_target = min(round_target, finish_at)
+                    if ts["steps_done"] >= round_target and ts["warmed"]:
+                        continue
                     cancel.check()
-                    if cancel.finishing:  # soft stop: this and every later tile keep the reduced budget
-                        if not stats.finished_early:
-                            stats.finished_early = True
-                            stats.notes.append(f"Finished early on request at {100 * steps_done / total_steps:.0f} % of the budget.")
-                        total_steps = steps_done
-                        break
-                    k = min(steps_per_pass, total_steps - steps_done, MAX_STEPS_PER_PASS)
-                    tp = time.perf_counter()
-                    dispatch(k, 1)
-                    merge()
-                    ctx.finish()
-                    dtp = time.perf_counter() - tp
-                    steps_done += k
-                    done_steps_all += k
-                    passes += 1
-                    if dtp > 0:
-                        steps_per_pass = int(min(max(4, k * TARGET_PASS_SECONDS / dtp), MAX_STEPS_PER_PASS))
-                    frac = done_steps_all / steps_all
-                    tracker.update(0.05 + 0.9 * frac, f"tile {ti + 1}/{len(tiles)} · pass {passes} · {done_steps_all * n_traj / 1e6:.1f} M points")
-                    if sink is not None and len(tiles) == 1 and (time.perf_counter() - last_partial > 0.5 or steps_done >= total_steps):
-                        last_partial = time.perf_counter()
+                    imgs = self._make_images(ctx, tw, th, needs)
+                    try:
+                        if rnd > 0:  # restore this tile's accumulators from the host copies
+                            self._upload(imgs, needs, count_full, depth_full, zmin_full, cv_full, tx, ty, tw, th)
+                        ts["state"].bind_to_storage_buffer(0)
+                        ts["rng"].bind_to_storage_buffer(1)
+                        ts["prev"].bind_to_storage_buffer(2)
+                        ts["prevd"].bind_to_storage_buffer(3)
+                        ts["stats"].bind_to_storage_buffer(4)
+                        ts["esc"].bind_to_storage_buffer(5)
+                        for u, (tex, _) in enumerate(imgs["uint"]):
+                            tex.bind_to_image(u, read=True, write=True)
+                        _set(it, "u_size", (tw, th))
+                        _set(it, "u_c", (float(cx - tx), float(cy - ty)))
+
+                        def dispatch(steps: int, plot: int, ts=ts) -> None:
+                            _set(it, "u_steps", int(steps))
+                            _set(it, "u_t0", float(ts["t_base"]))
+                            _set(it, "u_flags", (int(needs.depth), int(needs.zmin), int(needs.color), plot))
+                            it.run(group_x=groups)
+                            ctx.memory_barrier()
+                            ts["t_base"] += steps * substeps
+
+                        def merge(imgs=imgs, tw=tw, th=th) -> None:
+                            m = prog.merge
+                            for u, (tex, _) in enumerate(imgs["uint"]):
+                                tex.bind_to_image(u, read=True, write=True)
+                            for u, (tex, _) in enumerate(imgs["float"]):
+                                tex.bind_to_image(4 + u, read=True, write=True)
+                            _set(m, "u_size", (tw, th))
+                            _set(m, "u_flags", (int(needs.depth), int(needs.zmin), int(needs.color), 0))
+                            m.run(group_x=(tw + 15) // 16, group_y=(th + 15) // 16)
+                            ctx.memory_barrier()
+
+                        if not ts["warmed"]:  # warm-up (not plotted)
+                            warm = stats.warmup_steps
+                            while warm > 0:
+                                k = min(warm, MAX_STEPS_PER_PASS)
+                                dispatch(k, 0)
+                                warm -= k
+                            ts["prev"].write(np.zeros((n_traj, 4), dtype=np.float32).tobytes())
+                            ts["warmed"] = True
+                        # passes up to this round's target
+                        while ts["steps_done"] < round_target:
+                            cancel.check()
+                            if cancel.finishing and finish_at is None:  # soft stop: every tile ends at this count
+                                finish_at = max(ts["steps_done"], min(total_steps, MIN_FINISH_STEPS))
+                                round_target = min(round_target, finish_at)
+                                stats.finished_early = True
+                                stats.notes.append(f"Finished early on request at {100 * finish_at / total_steps:.0f} % of the budget.")
+                                if ts["steps_done"] >= round_target:
+                                    break
+                            k = min(steps_per_pass, round_target - ts["steps_done"], MAX_STEPS_PER_PASS)
+                            tp = time.perf_counter()
+                            dispatch(k, 1)
+                            merge()
+                            ctx.finish()
+                            dtp = time.perf_counter() - tp
+                            ts["steps_done"] += k
+                            done_steps_all += k
+                            passes += 1
+                            if dtp > 0:
+                                steps_per_pass = int(min(max(4, k * TARGET_PASS_SECONDS / dtp), MAX_STEPS_PER_PASS))
+                            frac = done_steps_all / steps_all
+                            tracker.update(0.05 + 0.9 * frac, f"tile {ti + 1}/{len(tiles)} · round {rnd + 1}/{rounds} · pass {passes} · {done_steps_all * n_traj / 1e6:.1f} M points")
+                            if sink is not None and len(active) == 1 and (time.perf_counter() - last_partial > 0.5 or ts["steps_done"] >= total_steps):
+                                self._readback(imgs, needs, count_full, depth_full, zmin_full, cv_full, tx, ty, tw, th)
+                                emit_partial(frac)
                         self._readback(imgs, needs, count_full, depth_full, zmin_full, cv_full, tx, ty, tw, th)
-                        stats.iterations_done = steps_done * n_traj
-                        stats.accumulate_seconds = time.perf_counter() - t_acc
-                        partial = self._assemble(settings, framing, stats, count_full, depth_full, zmin_full, cv_full, ss, False)
-                        sink(plan.finish(partial), frac)
-                self._readback(imgs, needs, count_full, depth_full, zmin_full, cv_full, tx, ty, tw, th)
-                s = np.frombuffer(b_stats.read(), dtype=np.uint32)
-                restarts_total += int(s[0])
-                plotted_total += (int(s[2]) * 4294967296.0 + int(s[1])) / 16.0
-                if sink is not None and len(tiles) > 1:  # tile-complete partial (checkpointable)
-                    stats.tiles_done = ti + 1
-                    stats.iterations_done = total_steps * n_traj
-                    stats.accumulate_seconds = time.perf_counter() - t_acc
-                    partial = self._assemble(settings, framing, stats, count_full, depth_full, zmin_full, cv_full, ss, False)
-                    sink(plan.finish(partial), (ti + 1) / len(tiles))
-            finally:
-                for tex, _ in imgs["uint"] + imgs["float"]:
-                    tex.release()
-                for b in (b_state, b_rng, b_prev, b_prevd, b_stats):
-                    b.release()
+                    finally:
+                        for tex, _ in imgs["uint"] + imgs["float"]:
+                            tex.release()
+                if sink is not None and len(active) > 1:  # all tiles are at the same fraction: a uniform partial
+                    emit_partial(done_steps_all / steps_all)
+                if finish_at is not None and all(t["steps_done"] >= finish_at for t in tile_state.values()):
+                    break
+            for ts in tile_state.values():
+                sv = np.frombuffer(ts["stats"].read(), dtype=np.uint32)
+                restarts_total += int(sv[0])
+                plotted_total += (int(sv[2]) * 4294967296.0 + int(sv[1])) / 16.0
+        finally:
+            for ts in tile_state.values():
+                for key in ("state", "rng", "prev", "prevd", "stats", "esc"):
+                    ts[key].release()
+        if finish_at is not None:
+            total_steps = finish_at
 
         stats.accumulate_seconds = time.perf_counter() - t_acc
         stats.iterations_done = total_steps * n_traj  # effective per-pixel budget (each tile runs it)
@@ -343,6 +376,20 @@ class GLComputeEngine(Engine):
             tex.write(fill.tobytes())
             float_imgs.append((tex, idx))
         return {"uint": uint_imgs, "float": float_imgs}
+
+    @staticmethod
+    def _upload(imgs, needs, count, depth, zmin, cv, tx, ty, tw, th) -> None:
+        """Inverse of :meth:`_readback`: restore a tile's float accumulators from the host copies."""
+        def write(i, src):
+            imgs["float"][i][0].write(np.ascontiguousarray(src[ty : ty + th, tx : tx + tw], dtype=np.float32).tobytes())
+
+        write(0, count)
+        if depth is not None:
+            write(1, depth)
+        if zmin is not None:
+            write(2, zmin)
+        if cv is not None:
+            write(3, cv)
 
     @staticmethod
     def _readback(imgs, needs, count, depth, zmin, cv, tx, ty, tw, th) -> None:

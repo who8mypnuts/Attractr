@@ -36,3 +36,12 @@ def test_gradient_lut_endpoints_and_cycle():
 
 def test_quality_iterations():
     assert Quality(width=100, height=10, points_per_pixel=3).iterations == 3000
+
+
+def test_project_history_roundtrip(tmp_path):
+    from attractr.core.project.files import Project, load_project, save_project
+    from attractr.core.render.settings import RenderSettings
+
+    p = Project(RenderSettings(), history={"lorenz": {"rho": [28.0, 30.5]}})
+    save_project(p, tmp_path / "h.attractr")
+    assert load_project(tmp_path / "h.attractr").history == {"lorenz": {"rho": [28.0, 30.5]}}

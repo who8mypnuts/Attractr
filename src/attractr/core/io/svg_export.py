@@ -20,6 +20,8 @@ def trace(settings: RenderSettings, points: int = 20000, seed: int | None = None
     """Projected pixel coordinates ``[n, 2]`` (NaN rows mark trajectory restarts) of one
     trajectory after the attractor's warm-up, plus whether consecutive points form a curve."""
     spec = resolve_spec(settings)
+    if spec.is_escape:
+        raise ValueError("escape-time systems have no single orbit to trace")
     q = settings.quality
     params = spec.params_array(settings.param_dict)
     dt = float(q.dt) if q.dt else spec.dt
