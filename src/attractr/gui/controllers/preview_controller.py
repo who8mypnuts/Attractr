@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
+from attractr.core.render.accumulators import needs_for
 from attractr.core.render.result import RenderResult
 from attractr.core.render.settings import RenderSettings
 from attractr.gui.controllers.develop_controller import DevelopController
@@ -61,8 +62,11 @@ class PreviewController(QObject):
     def on_document_changed(self, settings: RenderSettings, tags: frozenset) -> None:
         if not self.enabled:
             return
-        if tags <= {"look"} and self._last_result is not None:
-            self.develop.request(self._last_result, settings.look)
+        last = self._last_result
+        # a look change only re-develops — unless it needs buffers the last accumulation
+        # did not produce (colour source, depth/zmin for Liquid/Solid)
+        if tags <= {"look"} and last is not None and needs_for(settings.look) == needs_for(last.settings.look):
+            self.develop.request(last, settings.look)
             return
         self._pending_settings = settings
         self._debounce.start()

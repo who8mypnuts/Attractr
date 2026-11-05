@@ -1,10 +1,11 @@
 #version 430
+//__PRECISION__
 // ── Attractr iteration kernel (GL 4.3 compute) ───────────────────────────────────
 // One invocation = one trajectory.  Accumulates ``u_steps`` points into fixed-point
 // uint images (merged into float accumulators by merge.comp after every pass).
 layout(local_size_x = 128) in;
 
-layout(std430, binding = 0) buffer State  { vec4 st[]; };     // x, y, z, t_step
+layout(std430, binding = 0) buffer State  { real4 st[]; };    // x, y, z, t_step (float or double)
 layout(std430, binding = 1) buffer Rng    { uint rng_state[]; };
 layout(std430, binding = 2) buffer Prev   { vec4 prev[]; };   // u, v, cv, have(>0)
 layout(std430, binding = 3) buffer PrevD  { vec4 prevd[]; };  // previous step delta (curvature)
@@ -84,11 +85,11 @@ float splat(float u, float v, float w, float depth, float cv) {
     return landed;
 }
 
-float color_value(float qx, float qy, float qz, float speed, float radius, float curv, float idx, float x, float y, float z) {
+float color_value(float qx, float qy, float qz, float speed, float radius, float curv, float idx, real x, real y, real z) {
     switch (u_color_code) {
         case 1: return qx;  case 2: return qy;  case 3: return qz;  case 4: return qz;
         case 5: return speed; case 6: return radius; case 7: return idx; case 8: return curv;
-        case 9: return color_fn(x, y, z);
+        case 9: return float(color_fn(x, y, z));
     }
     return 0.0;
 }
@@ -96,8 +97,9 @@ float color_value(float qx, float qy, float qz, float speed, float radius, float
 void main() {
     uint i = gl_GlobalInvocationID.x;
     if (i >= st.length()) return;
-    vec4 s = st[i];
-    float x = s.x, y = s.y, z = s.z, tstep = s.w;
+    real4 s = st[i];
+    real x = s.x, y = s.y, z = s.z, tstep = s.w;
+    real dt = R(u_dt);
     uint rng = rng_state[i];
     vec4 pv = prev[i];
     vec4 pd = prevd[i];
@@ -105,26 +107,26 @@ void main() {
     bool want_color = u_flags.z != 0;
 
     for (int n = 0; n < u_steps; n++) {
-        float ox = x, oy = y, oz = z;
-        for (int k = 0; k < u_substeps; k++) { step(x, y, z, rng, tstep, u_dt); tstep += 1.0; }
+        real ox = x, oy = y, oz = z;
+        for (int k = 0; k < u_substeps; k++) { step(x, y, z, rng, tstep, dt); tstep += R(1.0); }
         if (isnan(x) || isnan(y) || isnan(z) || isinf(x) || isinf(y) || isinf(z)
-            || abs(x) > DIVERGE_LIMIT || abs(y) > DIVERGE_LIMIT || abs(z) > DIVERGE_LIMIT) {
-            x = u_ic.x + (_rand(rng) - 0.5) * u_jitter;
-            y = u_ic.y + (_rand(rng) - 0.5) * u_jitter;
-            z = u_ic.z + (_rand(rng) - 0.5) * u_jitter;
+            || abs(x) > R(DIVERGE_LIMIT) || abs(y) > R(DIVERGE_LIMIT) || abs(z) > R(DIVERGE_LIMIT)) {
+            x = R(u_ic.x) + (_rand(rng) - R(0.5)) * R(u_jitter);
+            y = R(u_ic.y) + (_rand(rng) - R(0.5)) * R(u_jitter);
+            z = R(u_ic.z) + (_rand(rng) - R(0.5)) * R(u_jitter);
             atomicAdd(restarts, 1u);
             pv.w = 0.0;
             continue;
         }
         if (u_flags.w == 0) continue;
-        vec3 q = u_R * ((vec3(x, y, z) - u_center) * u_inv_radius);
+        vec3 q = u_R * vec3((real3(x, y, z) - real3(u_center)) * R(u_inv_radius));
         float d = max(1.0 + u_persp * q.z, 0.05);
         float u = u_c.x + u_focal * q.x / d;
         float v = u_c.y - u_focal * q.y / d;
         if (!(u > -1.0e6 && u < 1.0e6 && v > -1.0e6 && v < 1.0e6)) { pv.w = 0.0; continue; }
         float cv = 0.0;
         if (want_color) {
-            vec3 dd = vec3(x - ox, y - oy, z - oz);
+            vec3 dd = vec3(real3(x - ox, y - oy, z - oz));
             float speed = length(dd) * u_inv_radius;
             float curv = 0.5;
             if (u_color_code == 8) {
@@ -149,7 +151,7 @@ void main() {
         }
         pv = vec4(u, v, cv, 1.0);
     }
-    st[i] = vec4(x, y, z, tstep);
+    st[i] = real4(x, y, z, tstep);
     rng_state[i] = rng;
     prev[i] = pv;
     prevd[i] = pd;

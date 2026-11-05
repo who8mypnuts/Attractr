@@ -17,7 +17,7 @@ class HistogramWidget(QWidget):
         self.edges: list[float] = []
         self.norm = 1.0
         self.gamma = 1.0
-        self.setMinimumHeight(90)
+        self.setMinimumHeight(60)
 
     def set_data(self, counts: list[int], edges: list[float], norm: float, gamma: float) -> None:
         self.counts, self.edges, self.norm, self.gamma = counts, edges, norm, gamma

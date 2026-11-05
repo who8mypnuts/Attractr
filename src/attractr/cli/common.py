@@ -39,6 +39,7 @@ def add_override_args(ap) -> None:
     ap.add_argument("--ppp", type=float, help="points per pixel (iteration budget)")
     ap.add_argument("--iterations", type=float, help="absolute iteration count (overrides --ppp)")
     ap.add_argument("--engine", help="cpu | gl_compute | gl_points | gl_precision | opencl | auto")
+    ap.add_argument("--precision", choices=("auto", "fp32", "fp64"), help="GPU trajectory precision (fp64 needs driver support)")
     ap.add_argument("--ss", type=int, help="supersampling factor 1..4")
     ap.add_argument("--splat", type=int, help="splat radius 0..4")
     ap.add_argument("--no-gap-fill", action="store_true")
@@ -80,7 +81,7 @@ def apply_overrides(s: RenderSettings, a) -> RenderSettings:
         q = replace(q, points_per_pixel=a.iterations / (q.width * q.height))
     elif a.ppp:
         q = replace(q, points_per_pixel=a.ppp)
-    for name in ("engine", "integrator", "dt", "substeps", "seed"):
+    for name in ("engine", "integrator", "dt", "substeps", "seed", "precision"):
         v = getattr(a, name, None)
         if v is not None:
             q = replace(q, **{name: v})

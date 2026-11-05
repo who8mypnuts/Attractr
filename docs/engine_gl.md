@@ -8,6 +8,7 @@ Three GPU engines share one algorithm and the formula code generator
 | `gl_compute` | OpenGL 4.3 compute (ModernGL) | interactive preview and ordinary renders |
 | `gl_precision` | same shader core | final renders — tiles + supersampling + splat kernels from the settings |
 | `opencl` | OpenCL 1.2 (pyopencl) | any vendor's GPU, or CPUs through POCL/Intel runtimes; ships by default |
+| `gl_points` | OpenGL 3.3 (ModernGL) | fallback for macOS (GL 4.1, no compute) and old drivers — see below |
 
 ## Algorithm (identical in `iterate.comp` and `iterate.cl`)
 
@@ -47,8 +48,31 @@ atomic compute dispatch, fp64 support and a micro-benchmark (Mpts/s). `Quality.e
 cpu` for previews. If a GPU engine raises mid-render, the pipeline restarts the job on
 the CPU engine and records the failure in the report's notes — never silently.
 
-## Not yet implemented
+## Precision (fp32 / fp64)
 
-* `gl_points` (GL 3.3 point-splat fallback for macOS/old drivers) — planned for M6;
-  macOS users currently get the OpenCL or CPU engine.
-* fp64 state on GPU (`Quality.precision = "fp64"`) — planned; the CPU engine is fp64.
+`Quality.precision` (Render dialog → *Precision*, CLI `--precision fp64`) switches the
+trajectory state and all formula arithmetic to **double precision** on the GPU:
+
+* **OpenCL** uses the device's native `double` math (`cl_khr_fp64`).
+* **OpenGL** has `double` arithmetic (`GL_ARB_gpu_shader_fp64`) but no transcendental
+  functions for it, so `shaders/prelude_fp64.glsl` implements `sin cos tan exp log atan
+  atan2 asin acos sinh cosh tanh …` in software (Cody–Waite range reduction + short
+  polynomials). `tests/engines/test_fp64_math.py` checks every function against libm to
+  5 × 10⁻¹⁴ relative error.
+
+Consumer GPUs execute fp64 at 1/8–1/32 of their fp32 rate, so `auto` means fp32; use fp64
+for stiff flows with tiny time steps (Dequan Li, three-scroll) or when you need CPU-identical
+trajectories. The projection/splat stage always runs in fp32 — pixel positions do not need
+more.
+
+## `gl_points` (OpenGL 3.3 fallback)
+
+Trajectories live in 256×256 textures (state, RNG, previous position). Each pass renders
+a full-screen quad whose fragment shader advances every trajectory by one step (ping-pong
+targets), then a vertex shader reads the new state with `texelFetch` and emits one
+`GL_POINTS` vertex per trajectory into an RGBA32F framebuffer with additive blending
+(count, Σdepth, Σcolour); the nearest-depth buffer is drawn a second time with
+`GL_MIN` blending. Flows draw `GL_LINES` from the previous to the new position with
+weight 1/length (gap filling). Limitations: nearest-pixel splats (use supersampling for
+anti-aliasing), fp32 only, no restart statistics. Selection order puts it after the
+compute engines and before the CPU.

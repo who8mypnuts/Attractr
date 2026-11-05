@@ -2,8 +2,8 @@
 
 | Purpose | Order tried (`Quality.engine = "auto"`) |
 |---|---|
-| preview (viewport, thumbnails, search) | `gl_compute` → `opencl` → `cpu` |
-| final (render dialog, CLI, animation) | `gl_precision` → `opencl` → `cpu` |
+| preview (viewport, thumbnails, search) | `gl_compute` → `opencl` → `gl_points` → `cpu` |
+| final (render dialog, CLI, animation) | `gl_precision` → `opencl` → `gl_points` → `cpu` |
 
 Each engine is probed once per process (`attractr info`, Statistics → System): context
 creation, a tiny atomic compute dispatch, fp64 support, a 0.25 s micro-benchmark. An

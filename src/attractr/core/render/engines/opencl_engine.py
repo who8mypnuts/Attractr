@@ -92,14 +92,18 @@ class OpenCLEngine(Engine):
         except Exception as exc:  # noqa: BLE001
             return EngineCaps(self.id, self.name, available=False, notes=[f"OpenCL unavailable: {exc}"])
 
-    def _program(self, cf, integrator: str):
+    def _program(self, cf, integrator: str, fp64: bool = False):
         import pyopencl as cl
 
-        key = cf.source_hash
+        key = f"{cf.source_hash}:{integrator}:{int(fp64)}"
         if key in self._programs:
             return self._programs[key]
         gen = generate_gpu_source(cf.program, cf.analysis, integrator if cf.kind == "flow" else "rk4", "opencl")
-        src = self._kernel_src.replace("//__PRELUDE__", self._prelude).replace("//__STEP__", gen)
+        header = (
+            "#pragma OPENCL EXTENSION cl_khr_fp64 : enable\ntypedef double real;\ntypedef double4 real4;\n#define R(x) ((real)(x))\n"
+            if fp64 else "typedef float real;\ntypedef float4 real4;\n#define R(x) ((real)(x))\n"
+        )
+        src = self._kernel_src.replace("//__PRECISION__", header).replace("//__PRELUDE__", self._prelude).replace("//__STEP__", gen)
         try:
             import warnings
 
@@ -121,11 +125,14 @@ class OpenCLEngine(Engine):
         tracker = tracker or ProgressTracker(None)
         q, look = settings.quality, settings.look
         ctx, queue = self._ensure()
-        stats = RenderStats(engine=self.id, device=self._device.name.strip(), precision="fp32")
+        fp64 = q.precision == "fp64" and "cl_khr_fp64" in self._device.extensions
+        if q.precision == "fp64" and not fp64:
+            log.warning("fp64 requested but the OpenCL device lacks cl_khr_fp64; using fp32")
+        stats = RenderStats(engine=self.id, device=self._device.name.strip(), precision="fp64" if fp64 else "fp32")
 
         t0 = time.perf_counter()
         cf = spec.compiled(q.integrator)
-        k_iterate, k_merge = self._program(cf, q.integrator)
+        k_iterate, k_merge = self._program(cf, q.integrator, fp64)
         stats.compile_seconds = time.perf_counter() - t0
 
         params = spec.params_array(settings.param_dict)
@@ -199,7 +206,7 @@ class OpenCLEngine(Engine):
         for ti, (tx, ty, tw, th) in enumerate(tiles):
             cancel.check()
             st = seed_from_points(n_traj, q.seed, sample_pts, framing.radius * 1e-2)
-            state = np.zeros((n_traj, 4), dtype=np.float32)
+            state = np.zeros((n_traj, 4), dtype=np.float64 if fp64 else np.float32)
             state[:, 0], state[:, 1], state[:, 2] = st.X, st.Y, st.Z
             npix = tw * th
             b_state = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=state)

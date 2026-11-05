@@ -60,11 +60,19 @@ def _write(prog, name: str, data: bytes) -> None:
 
 
 class _Programs:
-    """Compiled shaders for one (formula, integrator) on one context."""
+    """Compiled shaders for one (formula, integrator, precision) on one context."""
 
-    def __init__(self, ctx, cf, integrator: str) -> None:
-        self.iterate = compile_compute(ctx, assemble_iterate_shader(cf, integrator), "iterate shader")
+    def __init__(self, ctx, cf, integrator: str, fp64: bool) -> None:
+        self.iterate = compile_compute(ctx, assemble_iterate_shader(cf, integrator, fp64), "iterate shader")
         self.merge = compile_compute(ctx, read_shader("merge.comp"), "merge shader")
+        self.fp64 = fp64
+
+
+def resolve_precision(requested: str, caps_fp64: bool, final: bool) -> bool:
+    """``auto`` → fp32 (fp64 is 2–32× slower on consumer GPUs); ``fp64`` only when supported."""
+    if requested == "fp64":
+        return bool(caps_fp64)
+    return False
 
 
 class GLComputeEngine(Engine):
@@ -74,7 +82,7 @@ class GLComputeEngine(Engine):
 
     def __init__(self) -> None:
         self.pool = GLContextPool(430)
-        self._programs: dict[tuple[int, str], _Programs] = {}
+        self._programs: dict[tuple, _Programs] = {}
         self._info = None
 
     # ── probe ──────────────────────────────────────────────────────────────────
@@ -110,13 +118,16 @@ class GLComputeEngine(Engine):
         q, look = settings.quality, settings.look
         ctx = self.pool.get()
         info = self._info or query_info(ctx)
-        stats = RenderStats(engine=self.id, device=info.renderer, precision="fp32")
+        fp64 = resolve_precision(q.precision, info.fp64, self.precision_profile)
+        if q.precision == "fp64" and not fp64:
+            log.warning("fp64 requested but GL_ARB_gpu_shader_fp64 is not available; using fp32")
+        stats = RenderStats(engine=self.id, device=info.renderer, precision="fp64" if fp64 else "fp32")
 
         t0 = time.perf_counter()
         cf = spec.compiled(q.integrator)
-        key = (id(ctx), cf.source_hash)
+        key = (id(ctx), cf.source_hash, q.integrator, fp64)
         if key not in self._programs:
-            self._programs[key] = _Programs(ctx, cf, q.integrator)
+            self._programs[key] = _Programs(ctx, cf, q.integrator, fp64)
         prog = self._programs[key]
         stats.compile_seconds = time.perf_counter() - t0
         tracker.update(0.0, "shaders ready")
@@ -195,7 +206,7 @@ class GLComputeEngine(Engine):
             cancel.check()
             # trajectories restart identically per tile → deterministic, seamless tiles
             st = seed_from_points(n_traj, q.seed, sample_pts, framing.radius * 1e-2)
-            state = np.zeros((n_traj, 4), dtype=np.float32)
+            state = np.zeros((n_traj, 4), dtype=np.float64 if fp64 else np.float32)
             state[:, 0], state[:, 1], state[:, 2] = st.X, st.Y, st.Z
             b_state = ctx.buffer(state.tobytes())
             b_rng = ctx.buffer(st.RS.astype(np.uint32).tobytes())

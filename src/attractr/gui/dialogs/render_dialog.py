@@ -79,6 +79,10 @@ class RenderDialog(QDialog):
         self.engine.addItem("auto (best available)", "auto")
         for eid in selector.engine_ids():
             self.engine.addItem(eid, eid)
+        self.precision = QComboBox()
+        self.precision.addItem("auto (fp32)", "auto")
+        self.precision.addItem("fp32", "fp32")
+        self.precision.addItem("fp64 — double precision trajectories (GPU: needs fp64 support, slower)", "fp64")
         self.ss = QSpinBox()
         self.ss.setRange(1, 4)
         self.ss.setToolTip("Supersampling: accumulate at N× resolution and box-filter down")
@@ -89,6 +93,7 @@ class RenderDialog(QDialog):
         f.addRow("Points / pixel", self.ppp)
         f.addRow("", self.points_label)
         f.addRow("Engine", self.engine)
+        f.addRow("Precision", self.precision)
         f.addRow("Supersampling", self.ss)
         f.addRow("Splat radius", self.splat)
         lay.addWidget(g)
@@ -201,7 +206,8 @@ class RenderDialog(QDialog):
     def _render(self) -> None:
         s: RenderSettings = self.get_settings()
         q = replace(s.quality, width=self.width.value(), height=self.height.value(), points_per_pixel=self.ppp.value(),
-                    supersample=self.ss.value(), splat_radius=self.splat.value(), engine=self.engine.currentData())
+                    supersample=self.ss.value(), splat_radius=self.splat.value(), engine=self.engine.currentData(),
+                    precision=self.precision.currentData())
         s = replace(s, quality=q)
         reports = [self.report_fmt.currentData()] if self.report_on.isChecked() else []
         job = RenderJob(s, Path(self.folder.text()).expanduser(), self.template.text() or DEFAULT_TEMPLATE,

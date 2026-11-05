@@ -15,8 +15,8 @@ _instances: dict[str, Engine] = {}
 _caps: dict[str, EngineCaps] = {}
 _lock = threading.Lock()
 
-PREVIEW_ORDER = ("gl_compute", "gl_points", "opencl", "cpu")
-FINAL_ORDER = ("gl_precision", "opencl", "cpu")
+PREVIEW_ORDER = ("gl_compute", "opencl", "gl_points", "cpu")
+FINAL_ORDER = ("gl_precision", "opencl", "gl_points", "cpu")
 
 
 def register(engine_id: str, factory: Callable[[], Engine]) -> None:
@@ -74,6 +74,10 @@ def _register_builtin() -> None:
         from attractr.core.render.engines import gl_engines  # noqa: F401  (registers itself)
     except Exception as exc:  # noqa: BLE001
         log.info("GL engines not registered: %s", exc)
+    try:
+        from attractr.core.render.engines import gl_points  # noqa: F401
+    except Exception as exc:  # noqa: BLE001
+        log.info("gl_points engine not registered: %s", exc)
     try:
         from attractr.core.render.engines import opencl_engine  # noqa: F401
     except Exception as exc:  # noqa: BLE001

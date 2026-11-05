@@ -740,11 +740,11 @@ milestone is the execution order.
 |---|---|---|
 | M0 Foundation | ✅ done | scaffold, settings/camera/gradient models, jobs layer, tests |
 | M1 Core engine & CLI | ✅ done | DSL (lexer/parser/validator/codegen numba+GLSL+OpenCL), 53 tier-1 attractors, CPU engine, adaptive framing, six styles, palettes, exports with metadata, reports md/txt/html/pdf, Lyapunov/dimension/probe, CLI |
-| M2 GPU engines | ✅ done (partial) | `gl_compute` / `gl_precision` (GL 4.3 compute, fixed-point + merge, tiles), `opencl`, selector + fallback, parity tests. **Not done:** `gl_points` GL 3.3 fallback, fp64 GPU state |
+| M2 GPU engines | ✅ done | `gl_compute` / `gl_precision` (GL 4.3 compute, fixed-point + merge, tiles), `opencl`, `gl_points` (GL 3.3 fallback), fp64 precision mode (software double math for GLSL), selector + fallback, parity tests |
 | M3 GUI shell | ✅ done | document/undo, progressive preview worker, viewport trackball/HUD/probe, all panels, render dialog + queue, dark theme, logo, presets/daily/codes, autosave/recovery, tips |
 | M4 Editors & panels | ✅ done | gradient editor (+ggr), formula editor (highlighter, errors, completion, live apply, probe badge), XY pad, mutate grid, search, caption overlay, gallery, stats/system panels |
 | M5 Animator | ✅ done | timeline/keys/easing, helpers (turntable, morph, sweep, palette cycle, zoom, orbit trace), locked framing, resumable sequences, motion blur, ffmpeg presets, timeline panel, animate dialog, CLI |
-| M6 Polish | ✅ mostly | 26 tier-2 attractors (79 total), procedural backgrounds, worker-process architecture (no GIL stalls), kernel warm-up, kernel variant specialisation (2–5× CPU speed-up), docs, generated attractor pages, PyInstaller spec. **Deferred:** `gl_points`, GPU fp64, i18n, CI workflow file |
+| M6 Polish | ✅ mostly | 26 tier-2 attractors (79 total), procedural backgrounds, worker-process architecture (no GIL stalls), kernel warm-up, kernel variant specialisation (2–5× CPU speed-up), docs, generated attractor pages, PyInstaller spec. **Deferred:** i18n (strings are plain Python; a translation layer is future work) |
 
 Deviations from the original plan worth knowing:
 

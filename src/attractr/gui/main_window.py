@@ -91,18 +91,19 @@ class MainWindow(QMainWindow):
         self.anim = AnimationController(self.doc, self)
         self.timeline_panel = TimelinePanel(self.doc, self.anim)
         self.timeline_panel.renderRequested.connect(self.show_animate_dialog)
+        self.formula_panel.popOutRequested.connect(self._toggle_formula_popout)
         self._dock("attractors", "Attractors", self.browser, Qt.DockWidgetArea.LeftDockWidgetArea)
         self._dock("parameters", "Parameters", self.params_panel, Qt.DockWidgetArea.LeftDockWidgetArea)
-        self._dock("presets", "Presets", self.presets_panel, Qt.DockWidgetArea.LeftDockWidgetArea)
+        self._dock("presets", "Presets", self.presets_panel, Qt.DockWidgetArea.LeftDockWidgetArea, scroll=True)
         self._dock("look", "Look", self.look_panel, Qt.DockWidgetArea.RightDockWidgetArea)
-        self._dock("camera", "Camera", self.camera_panel, Qt.DockWidgetArea.RightDockWidgetArea)
+        self._dock("camera", "Camera", self.camera_panel, Qt.DockWidgetArea.RightDockWidgetArea, scroll=True)
         self._dock("info", "Info", self.info_panel, Qt.DockWidgetArea.RightDockWidgetArea)
-        self._dock("stats", "Statistics", self.stats_panel, Qt.DockWidgetArea.RightDockWidgetArea)
-        self._dock("jobs", "Jobs", self.jobs_panel, Qt.DockWidgetArea.BottomDockWidgetArea)
+        self._dock("stats", "Statistics", self.stats_panel, Qt.DockWidgetArea.RightDockWidgetArea, scroll=True)
+        self._dock("jobs", "Jobs", self.jobs_panel, Qt.DockWidgetArea.BottomDockWidgetArea, scroll=True)
         self._dock("formula", "Formula", self.formula_panel, Qt.DockWidgetArea.BottomDockWidgetArea)
-        self._dock("search", "Search", self.search_panel, Qt.DockWidgetArea.BottomDockWidgetArea)
-        self._dock("gallery", "Gallery", self.gallery_panel, Qt.DockWidgetArea.BottomDockWidgetArea)
-        self._dock("timeline", "Timeline", self.timeline_panel, Qt.DockWidgetArea.BottomDockWidgetArea)
+        self._dock("search", "Search", self.search_panel, Qt.DockWidgetArea.BottomDockWidgetArea, scroll=True)
+        self._dock("gallery", "Gallery", self.gallery_panel, Qt.DockWidgetArea.BottomDockWidgetArea, scroll=True)
+        self._dock("timeline", "Timeline", self.timeline_panel, Qt.DockWidgetArea.BottomDockWidgetArea, scroll=True)
         self.tabifyDockWidget(self.docks["formula"], self.docks["timeline"])
         self.tabifyDockWidget(self.docks["formula"], self.docks["search"])
         self.tabifyDockWidget(self.docks["formula"], self.docks["gallery"])
@@ -149,9 +150,18 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(1500, lambda: __import__("attractr.gui.dialogs.tips_dialog", fromlist=["TipsDialog"]).TipsDialog.maybe_show(self))
 
     # ── construction helpers ───────────────────────────────────────────────────
-    def _dock(self, key: str, title: str, widget, area) -> QDockWidget:
+    def _dock(self, key: str, title: str, widget, area, scroll: bool = False) -> QDockWidget:
         d = QDockWidget(title, self)
         d.setObjectName(f"dock_{key}")
+        if scroll:  # keep panels' minimum heights small so other docks (e.g. the formula editor) can grow
+            from PySide6.QtWidgets import QScrollArea
+
+            sa = QScrollArea()
+            sa.setWidgetResizable(True)
+            sa.setFrameShape(QScrollArea.Shape.NoFrame)
+            sa.setWidget(widget)
+            sa.setMinimumHeight(60)
+            widget = sa
         d.setWidget(widget)
         d.setAllowedAreas(Qt.DockWidgetArea.AllDockWidgetAreas)
         self.addDockWidget(area, d)
@@ -398,6 +408,20 @@ class MainWindow(QMainWindow):
         self._warm_proc.finished.connect(lambda *_: self._set_status("attractor kernels prepared — CPU rendering is now fast for every built-in"))
         self._warm_proc.start()
         self._set_status("preparing attractor kernels in the background (first run only)…")
+
+    def _toggle_formula_popout(self) -> None:
+        d = self.docks["formula"]
+        if d.isFloating():
+            d.setFloating(False)
+            self.formula_panel.btn_popout.setText("⤢ Enlarge")
+        else:
+            d.setFloating(True)
+            g = self.geometry()
+            d.resize(int(g.width() * 0.7), int(g.height() * 0.75))
+            d.move(g.x() + int(g.width() * 0.15), g.y() + int(g.height() * 0.12))
+            self.formula_panel.btn_popout.setText("⤓ Dock")
+        d.show()
+        d.raise_()
 
     def _show_tips(self) -> None:
         from attractr.gui.dialogs.tips_dialog import TipsDialog

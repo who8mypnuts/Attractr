@@ -25,7 +25,7 @@ class Viewport(QWidget):
         self.doc = document
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self.setMinimumSize(200, 150)
+        self.setMinimumSize(120, 90)
         self._image: QImage | None = None
         self._result: RenderResult | None = None
         self._drag_button: Qt.MouseButton | None = None

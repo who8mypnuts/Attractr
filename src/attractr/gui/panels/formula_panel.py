@@ -56,6 +56,8 @@ class _ProbeTask(QRunnable):
 
 
 class FormulaPanel(QWidget):
+    popOutRequested = Signal()
+
     def __init__(self, doc: Document, worker=None, parent=None) -> None:
         super().__init__(parent)
         self.doc = doc
@@ -84,6 +86,10 @@ class FormulaPanel(QWidget):
         for w in (self.btn_new, self.btn_fork, self.auto, self.btn_apply, self.btn_save, self.btn_revert):
             bar.addWidget(w)
         bar.addStretch(1)
+        self.btn_popout = QPushButton("⤢ Enlarge")
+        self.btn_popout.setToolTip("Float the editor in a large window (click again to dock it back)")
+        self.btn_popout.clicked.connect(self.popOutRequested)
+        bar.addWidget(self.btn_popout)
         lay.addLayout(bar)
 
         self.editor = CodeEditor()

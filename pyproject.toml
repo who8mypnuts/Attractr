@@ -59,6 +59,7 @@ ignore = ["E501", "E741", "N802", "N803", "N806", "N815", "N812", "N818", "B008"
 "src/attractr/core/formula/runtime_numba.py" = ["F401"]
 "src/attractr/core/render/engines/gl_engines.py" = ["B023"]
 "src/attractr/core/render/engines/opencl_engine.py" = ["B023"]
+"src/attractr/core/render/engines/gl_points.py" = ["B023"]
 
 [tool.mypy]
 python_version = "3.11"

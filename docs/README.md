@@ -26,5 +26,6 @@
 | [animation.md](animation.md) | timeline, keyframes, helpers, rendering, ffmpeg |
 | [gui_guide.md](gui_guide.md) | panels, viewport, shortcuts |
 | [changelog.md](changelog.md) | release notes |
+| [suggested-improvements.md](suggested-improvements.md) | candidate attractors and improvements (not implemented) |
 | [attractors/](attractors/README.md) | generated page per attractor |
 | `images/contact_sheet.png` | every built-in attractor at default settings |

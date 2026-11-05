@@ -96,14 +96,35 @@ def read_shader(name: str) -> str:
     return (SHADER_DIR / name).read_text(encoding="utf-8")
 
 
-def assemble_iterate_shader(cf: CompiledFormula, integrator: str) -> str:
-    """Fill the iterate.comp template with the prelude and the generated step()/color_fn()."""
+GLSL_PRECISION_FP32 = """
+#define real float
+#define real3 vec3
+#define real4 vec4
+#define R(x) (x)
+"""
+GLSL_PRECISION_FP64 = """
+#extension GL_ARB_gpu_shader_fp64 : enable
+#define ATTRACTR_FP64 1
+#define real double
+#define real3 dvec3
+#define real4 dvec4
+#define R(x) double(x)
+"""
+
+
+def assemble_iterate_shader(cf: CompiledFormula, integrator: str, fp64: bool = False) -> str:
+    """Fill the iterate.comp template with the precision header, the prelude(s) and the
+    generated step()/color_fn()."""
     src = read_shader("iterate.comp")
     gen = generate_gpu_source(cf.program, cf.analysis, integrator if cf.kind == "flow" else "rk4", "glsl")
     nparams = max(1, len(cf.param_names))
+    prelude = read_shader("prelude.glsl")
+    if fp64:
+        prelude = read_shader("prelude_fp64.glsl") + "\n" + prelude
     return (
         src.replace("__NPARAMS__", str(nparams))
-        .replace("//__PRELUDE__", read_shader("prelude.glsl"))
+        .replace("//__PRECISION__", GLSL_PRECISION_FP64 if fp64 else GLSL_PRECISION_FP32)
+        .replace("//__PRELUDE__", prelude)
         .replace("//__STEP__", gen)
     )
 
