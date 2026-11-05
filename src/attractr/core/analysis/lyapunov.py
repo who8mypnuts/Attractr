@@ -42,14 +42,15 @@ def largest_exponent(
     p = spec.params_array(params)
     dt_ = float(dt) if dt else spec.dt
     pts = sample_attractor(spec, p, dt_, substeps, spec.warmup, seed, n_traj=64, steps=64)
-    good = pts[np.all(np.isfinite(pts), axis=1)]
+    states = pts[:, :4]
+    good = states[np.all(np.isfinite(states), axis=1)]
     if good.shape[0] == 0:
         return LyapunovResult(float("nan"), "divergent", 0, True)
-    x0, y0, z0 = (float(v) for v in good[len(good) // 2])
+    x0, y0, z0, w0 = (float(v) for v in _typical_state(good))
     scale = max(float(np.abs(good).max()), 1e-6)
     rs = np.array([(seed * 7919 + 1) & 0xFFFFFFFF, (seed * 104729 + 3) & 0xFFFFFFFF], dtype=np.uint32)
     renorm_every = 1 if spec.kind != "flow" else 5
-    total, renorms, diverged = mod.lyapunov_kernel(x0, y0, z0, p, rs, dt_, substeps, steps, d0 * scale, renorm_every)
+    total, renorms, diverged = mod.lyapunov_kernel(x0, y0, z0, w0, p, rs, dt_, substeps, steps, d0 * scale, renorm_every)
     if diverged or renorms == 0:
         return LyapunovResult(float("nan"), "divergent", steps, True)
     per_step = total / (renorms * renorm_every * substeps)
@@ -62,3 +63,12 @@ def largest_exponent(
     else:
         cls = "periodic"  # negative exponent: a limit cycle or a fixed point
     return LyapunovResult(float(lam), cls, steps, False)
+
+
+def _typical_state(states: np.ndarray) -> np.ndarray:
+    """The sampled state whose distance from the cloud's median centre is closest to the
+    median distance — a point squarely on the attractor rather than one of the outliers a
+    few escaping seeds leave behind."""
+    center = np.median(states, axis=0)
+    d = np.sqrt(((states - center) ** 2).sum(axis=1))
+    return states[int(np.argmin(np.abs(d - np.median(d))))]

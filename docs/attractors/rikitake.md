@@ -21,7 +21,7 @@ dz/dt = 1 − x · y
 | mu | 2 | [1, 3] | μ — dissipation. |
 | a | 5 | [3, 7] | Difference of the angular velocities. |
 
-Integration: RK4, default dt = 0.02, initial condition (0.1, 0.1, 0.1).
+Integration: RK4, default dt = 0.02, initial condition (0.1, 0.1, 0.1, 0.0).
 
 ## References
 

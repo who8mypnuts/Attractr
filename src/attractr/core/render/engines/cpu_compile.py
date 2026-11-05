@@ -76,7 +76,7 @@ def kernel_module(cf: CompiledFormula, variant: Variant = DEFAULT_VARIANT) -> Mo
                 '"""Generated kernel variant — do not edit."""\n'
                 "import math\nimport numpy as np\nfrom numba import njit\n"
                 "from attractr.core.formula.runtime_numba import *  # noqa: F401,F403\n"
-                f"from {base.__name__} import step, color_fn  # noqa: F401\n"
+                f"from {base.__name__} import step, color_fn, plot_fn, section_fn, HAS_PLOT, HAS_SECTION  # noqa: F401\n"
                 + _bake(body, variant)
             )
         mod = _import(f"attractr_kern_{key}", src)

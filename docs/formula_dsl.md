@@ -38,9 +38,13 @@ z' = sin(e*y) + f*cos(e*z)
 ```
 
 Header keys (all optional except `name`): `kind`, `dims`, `desc`, `ref`, `author`,
-`dt` (default step for flows), `ic` (nominal initial condition `(x, y, z)`),
-`warmup` (steps to discard), `camera` (default yaw/pitch/roll/zoom), `palette`,
-`tags`.
+`dt` (default step for flows), `ic` (nominal initial condition `x y z [w]` — the optional
+fourth number seeds `w`, which is otherwise 0),
+`warmup` (steps to discard), `jitter` (spread of the initial conditions), `camera`
+(default yaw/pitch/roll/zoom), `palette`, `style`, `tags`, `lyapunov` (λ₁ hint shown in the
+Info panel) and `boost` (iteration multiplier ≥ 1 — use it on Poincaré-section programs so
+that a normal points-per-pixel setting still yields a dense picture; the stats report the
+boosted budget).
 
 `param NAME = DEFAULT [MIN, MAX] "hint"` — min/max are soft slider bounds; optional
 `step=` and `int` flag (`param n = 3 [3, 12] int`).
@@ -49,15 +53,44 @@ Header keys (all optional except `name`): `kind`, `dims`, `desc`, `ref`, `author
 
 | Form | Meaning |
 |---|---|
-| `x' = expr` / `y' = expr` / `z' = expr` | map update (all right-hand sides use **old** values) |
-| `dx = expr` / `dy = expr` / `dz = expr` | flow derivative |
-| `t = expr` | local temporary (may be used in later lines; first letter lowercase identifier not x/y/z) |
+| `x' = expr` / `y' = expr` / `z' = expr` / `w' = expr` | map update (all right-hand sides use **old** values) |
+| `dx = expr` / `dy = expr` / `dz = expr` / `dw = expr` | flow derivative |
+| `t = expr` | local temporary (may be used in later lines; first letter lowercase identifier not x/y/z/w) |
 | `depth = expr` | optional: depth value for 2-D maps lifted into 3-D (Icon uses `Re(z^n)`) |
 | `color = expr` | optional: per-point colour driver (overrides the "Colour source" setting when present) |
+| `plot = ex, ey[, ez]` | optional: what is *drawn* instead of `(x, y, z)` — any expressions of the state (two expressions → a 2-D image) |
+| `section = expr` | optional: Poincaré section — a point is plotted only when `expr` changes sign between consecutive steps |
 | `choose { p1: stmts ; p2: stmts ; ... }` | IFS: pick one block at random with the given probabilities (normalised) |
 
-Exactly one of `{x',y',z'}` or `{dx,dy,dz}` sets must be present (a 2-D system may omit
+Exactly one of `{x',y',z',w'}` or `{dx,dy,dz,dw}` sets must be present (a 2-D system may omit
 `z'`/`dz`; it is treated as 0).
+
+### The fourth state variable `w`
+
+Every trajectory carries four numbers `(x, y, z, w)`. `w` is never drawn directly; it is a
+free extra dimension for:
+
+* **hyperchaotic 4-D systems** (Rössler hyperchaos, Lorenz–Stenflo, …) — write `dw = …` and
+  use `plot = x, y, z` (the default) or `plot = x, y, w` to pick a 3-D projection;
+* **driven / non-autonomous systems** — `dw = 1` turns `w` into time, so
+  `dy = … + gamma*cos(omega*w)` is a forcing term (Duffing, van der Pol, Ueda);
+* anything you want to hide from the picture — counters, phases, auxiliary accumulators.
+
+`w` is reset to `ic[3]` (default 0) when a trajectory restarts after diverging.
+
+### `plot` and `section`
+
+`plot` decouples *what is integrated* from *what is drawn*. Before projection the kernel
+evaluates the three plot expressions; framing, depth, gap filling and colouring all use
+the plotted point. `plot = x, y` (two expressions) marks the attractor as 2-D.
+
+`section = expr` keeps only the points where `expr` crosses zero (strict sign change between
+the previous and the current step), i.e. a **Poincaré section** of the flow. Gap filling is
+automatically disabled because consecutive plotted points are no longer neighbours. A
+section plots one point per crossing, so a flow that crosses every ~500 steps needs a
+**much higher points-per-pixel** setting than a normal render (the stats panel shows the
+plotted fraction). For a periodically-driven system with `dw = 1` use
+`section = sin(omega*w/2)` to sample once per forcing period (a stroboscopic map).
 
 ## 2. Expressions
 
@@ -85,8 +118,8 @@ Anything not in this list is a parse error with a caret and message shown in the
   impossible for chaotic systems and not needed.
 * `rand()` — xorshift32 per trajectory on both back-ends with the same seeding scheme so
   IFS renders are reproducible across engines.
-* Divergence: if any component is non-finite or `|v| > 1e6`, the trajectory is re-seeded
-  (counted in stats as a *restart*).
+* Divergence: if any component (including `w`) is non-finite or `|v| > 1e6`, the trajectory
+  is re-seeded (counted in stats as a *restart*).
 * `%`/`mod` follow GLSL `mod` (result has the sign of the divisor); numba codegen
   emulates that.
 
@@ -155,6 +188,39 @@ ci   = im_pow(x, -y, n-1)
 x'   = t*x - om*y + ga*cr
 y'   = t*y + om*x + ga*ci
 depth = ren
+```
+
+Driven oscillator and its stroboscopic Poincaré section (uses `w` as time):
+```text
+name: Duffing (driven)
+kind: flow
+dt: 0.01
+ic: 0.1 0 0 0
+param delta = 0.3 [0, 1]
+param gamma = 0.5 [0, 1]
+param omega = 1.2 [0.5, 2]
+dx = y
+dy = x - x^3 - delta*y + gamma*cos(omega*w)
+dz = 0
+dw = 1
+plot = x, y, 0
+section = sin(omega*w/2)      # remove this line for the full phase-space flow
+```
+
+Hyperchaotic Rössler (4-D, projected onto x, y, z):
+```text
+name: Rössler hyperchaos
+kind: flow
+dt: 0.005
+ic: -10 -6 0 10
+param a = 0.25 [0, 0.5]
+param b = 3 [0, 5]
+param c = 0.5 [0, 1]
+param d = 0.05 [0, 0.2]
+dx = -y - z
+dy = x + a*y + w
+dz = b + x*z
+dw = -c*z + d*w
 ```
 
 ## 6. Editor UX (see Plan §7.4)

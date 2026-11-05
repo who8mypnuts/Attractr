@@ -22,7 +22,7 @@ dz/dt = b + z · (x − c)
 | b | 0.2 | [0, 1] | Lift — base rate at which z grows. |
 | c | 5.7 | [0, 10] | Fold threshold — where the band snaps up. Larger c = wilder fold. |
 
-Integration: RK4, default dt = 0.02, initial condition (0.1, 0.0, 0.0).
+Integration: RK4, default dt = 0.02, initial condition (0.1, 0.0, 0.0, 0.0).
 
 ## References
 

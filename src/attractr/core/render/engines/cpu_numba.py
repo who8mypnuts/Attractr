@@ -16,7 +16,8 @@ from attractr.core.jobs.cancel import NEVER, CancelToken
 from attractr.core.jobs.progress import ProgressTracker
 from attractr.core.render.accumulators import needs_for
 from attractr.core.render.camera import Camera
-from attractr.core.render.engines.base import Engine, EngineCaps, PassSink
+from attractr.core.render.checkpoint import Checkpoint
+from attractr.core.render.engines.base import Engine, EngineCaps, PassSink, resume_plan
 from attractr.core.render.engines.cpu_compile import kernel_module
 from attractr.core.render.engines.state import seed_from_points
 from attractr.core.render.framing import compute_framing
@@ -86,6 +87,7 @@ class CpuEngine(Engine):
         sink: PassSink | None = None,
         cancel: CancelToken = NEVER,
         tracker: ProgressTracker | None = None,
+        resume: Checkpoint | None = None,
     ) -> RenderResult:
         t_start = time.perf_counter()
         q = settings.quality
@@ -114,6 +116,10 @@ class CpuEngine(Engine):
         framing, sample_pts = compute_framing(spec, params, dt, substeps, warmup, q.seed, settings.camera, W, H)
         stats.framing_seconds = time.perf_counter() - t0
         framing = apply_lock(framing, settings.camera)
+        if resume is not None and not resume.uniform:
+            raise ValueError("this checkpoint holds complete GPU tiles; resume it with the engine that made it")
+        plan = resume_plan(spec.iteration_budget(q.iterations), q.seed, resume)
+        framing = plan.framing or framing
         cancel.check()
         cam = effective_camera(settings.camera, framing)
         R = cam.matrix().ravel().astype(np.float64)
@@ -133,14 +139,15 @@ class CpuEngine(Engine):
 
         n_traj = q.trajectories or max(1024, T * 4096)
         # trajectories start on the attractor (framing sample) → short decorrelation warm-up
-        st = seed_from_points(n_traj, q.seed, sample_pts, framing.radius * 1e-2)
+        st = seed_from_points(n_traj, plan.seed, sample_pts, framing.radius * 1e-2)
         warmup = int(q.warmup) if q.warmup is not None else ACCUM_WARMUP
         ic = np.asarray(spec.ic, dtype=np.float64)
         kern = splat_kernel(q.splat_radius)
-        gap_fill = 1 if (q.gap_fill and spec.is_flow) else 0
+        gap_fill = 1 if (q.gap_fill and spec.plots_continuous) else 0
         stats.trajectories = n_traj
         stats.warmup_steps = warmup
-        stats.iterations_requested = q.iterations
+        budget = plan.budget
+        stats.iterations_requested = spec.iteration_budget(q.iterations)
 
         pool = ThreadPoolExecutor(max_workers=T) if T > 1 else None
 
@@ -148,7 +155,7 @@ class CpuEngine(Engine):
             lo, hi = (t * n_traj) // T, ((t + 1) * n_traj) // T
             mod.accumulate(
                 t, lo, hi,
-                st.X, st.Y, st.Z, st.RS, st.PU, st.PV, st.PC, st.HAVE, st.DXp, st.DYp, st.DZp,
+                st.X, st.Y, st.Z, st.W, st.SEC, st.RS, st.PU, st.PV, st.PC, st.HAVE, st.DXp, st.DYp, st.DZp,
                 params, dt, substeps, steps, t0,
                 R, center, inv_radius, cx, cy, focal, cam.perspective, Ws, Hs,
                 kern, gap_fill, needs.color_code, plot,
@@ -175,13 +182,17 @@ class CpuEngine(Engine):
         st.reset_history()
 
         # ── accumulation passes ────────────────────────────────────────────────
-        total_steps = max(1, math.ceil(q.iterations / n_traj))
+        total_steps = math.ceil(budget / n_traj)
         steps_done = 0
         steps_per_pass = 8
         passes = 0
         last_partial = time.perf_counter()
         while steps_done < total_steps:
             cancel.check()
+            if cancel.finishing:
+                stats.finished_early = True
+                stats.notes.append(f"Finished early on request at {100 * steps_done / total_steps:.0f} % of the budget.")
+                break
             k = min(steps_per_pass, total_steps - steps_done)
             tp = time.perf_counter()
             run(k, float(done + steps_done), 1)
@@ -194,8 +205,10 @@ class CpuEngine(Engine):
             tracker.update(0.05 + 0.93 * frac, f"pass {passes} · {steps_done * n_traj / 1e6:.1f} M points")
             if sink is not None and (time.perf_counter() - last_partial > 1.0 or steps_done >= total_steps):
                 last_partial = time.perf_counter()
+                stats.iterations_done = steps_done * n_traj
+                stats.accumulate_seconds = time.perf_counter() - t_acc
                 partial = self._assemble(settings, framing, stats, cnt, dep, zmn, cvb, needs, ss, complete=False)
-                sink(partial, frac)
+                sink(plan.finish(partial), frac)
 
         if pool is not None:
             pool.shutdown(wait=True)
@@ -204,7 +217,7 @@ class CpuEngine(Engine):
         stats.passes = passes
         stats.restarts = int(restarts.sum())
         stats.points_plotted = float(plotted.sum())
-        result = self._assemble(settings, framing, stats, cnt, dep, zmn, cvb, needs, ss, complete=True)
+        result = plan.finish(self._assemble(settings, framing, stats, cnt, dep, zmn, cvb, needs, ss, complete=True))
         summarize(result, look.percentile)
         stats.elapsed = time.perf_counter() - t_start
         tracker.update(1.0, "accumulated", force=True)

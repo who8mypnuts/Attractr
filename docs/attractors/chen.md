@@ -22,7 +22,7 @@ dz/dt = x · y − b · z
 | b | 3 | [1, 6] | Damping of z. |
 | c | 28 | [15, 35] | Growth of y. |
 
-Integration: RK4, default dt = 0.005, initial condition (0.1, 0.0, 0.0).
+Integration: RK4, default dt = 0.005, initial condition (0.1, 0.0, 0.0, 0.0).
 
 ## References
 

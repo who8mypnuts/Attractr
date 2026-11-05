@@ -98,6 +98,50 @@ def test_codegen_numba_matches_python(tmp_path):
     for _ in range(50):
         nx = math.sin(p[0] * y) + p[2] * math.cos(p[0] * x)
         ny = math.sin(p[1] * x) + p[3] * math.cos(p[1] * y)
-        gx, gy, gz = cf.step(x, y, z, p, rs, 0, 0.0, 0.0)
-        assert abs(gx - nx) < 1e-12 and abs(gy - ny) < 1e-12 and gz == 0.0
+        gx, gy, gz, gw = cf.step(x, y, z, 0.0, p, rs, 0, 0.0, 0.0)
+        assert abs(gx - nx) < 1e-12 and abs(gy - ny) < 1e-12 and gz == 0.0 and gw == 0.0
         x, y = nx, ny
+
+
+FORCED = """name: Forced
+dt: 0.01
+param g = 0.5
+dx = y
+dy = x - x*x*x - 0.3*y + g*cos(1.2*w)
+dz = 0
+dw = 1
+plot = x, y, 0
+section = sin(0.6*w)
+"""
+
+
+def test_dsl_w_plot_section():
+    from attractr.core.formula.compile import compile_source
+    from attractr.core.formula.validate import validate
+
+    an = validate(parse(FORCED))
+    assert an.kind == "flow" and an.uses_w and an.has_plot and an.has_section and an.dims == 2
+    cf = compile_source(FORCED)
+    p = np.array([0.5])
+    rs = np.array([1], dtype=np.uint32)
+    x, y, z, w = cf.step(0.1, 0.0, 0.0, 0.0, p, rs, 0, 0.0, 0.01)
+    assert abs(w - 0.01) < 1e-15 and z == 0.0
+    assert cf.plot_fn(1.0, 2.0, 3.0, 4.0, p) == (1.0, 2.0, 0.0)
+    assert abs(cf.section_fn(0.0, 0.0, 0.0, math.pi / 0.6, p)) < 1e-12
+
+
+def test_dsl_rejects_tuple_outside_plot_and_w_assignment():
+    from attractr.core.formula.validate import validate
+
+    for bad in ("x' = 1, 2\ny' = 1\n", "w = 1\nx' = w\ny' = x\n", "ic: 1 2\nx' = y\ny' = x\n"):
+        try:
+            validate(parse(bad))
+        except FormulaError:
+            continue
+        if "ic:" in bad:
+            from attractr.core.attractors.spec import spec_from_source
+            try:
+                spec_from_source(bad)
+            except FormulaError:
+                continue
+        raise AssertionError(bad)

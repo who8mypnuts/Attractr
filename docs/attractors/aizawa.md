@@ -25,7 +25,7 @@ dz/dt = c + a · z − z³ / 3 − (x² + y²) · (1 + e · z) + f · z · x³
 | e | 0.25 | [0, 1] | Coupling of z into the radial term. |
 | f | 0.1 | [0, 1] | Cubic x feedback into z — the asymmetry. |
 
-Integration: RK4, default dt = 0.01, initial condition (0.1, 0.1, 0.1).
+Integration: RK4, default dt = 0.01, initial condition (0.1, 0.1, 0.1, 0.0).
 
 ## References
 

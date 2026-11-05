@@ -66,6 +66,7 @@ def depth_factor(ctx: DevelopContext, strength: float) -> np.ndarray:
     if hi - lo < 1e-9:
         return np.ones_like(ctx.density)
     dn = np.clip((md - lo) / (hi - lo), 0.0, 1.0)  # 0 near … 1 far (depth grows away)
+    dn[~ctx.mask] = 0.0  # empty pixels are not attenuated (matters for inverted looks)
     return (1.0 - strength * 0.8 * dn).astype(np.float32)
 
 

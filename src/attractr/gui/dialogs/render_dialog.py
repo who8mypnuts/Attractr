@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QPushButton,
@@ -23,6 +24,7 @@ from PySide6.QtWidgets import (
 )
 
 from attractr.core.io.naming import DEFAULT_TEMPLATE
+from attractr.core.project.render_presets import RenderPreset, render_presets
 from attractr.core.render.engines import selector
 from attractr.core.render.settings import REPORT_FORMATS, RenderSettings
 from attractr.gui.controllers.render_job import RenderJob
@@ -33,6 +35,8 @@ SIZE_PRESETS = [
     ("8K 7680×4320", 7680, 4320), ("Print A3 300dpi 4961×3508", 4961, 3508), ("Custom", 0, 0),
 ]
 QUALITY_TIERS = [("Draft", 4.0), ("Standard", 12.0), ("High", 30.0), ("Ultra", 75.0), ("Custom", 0.0)]
+# points per pixel below which a style visibly suffers (Solid needs a dense surface, Liquid a smooth depth field)
+RECOMMENDED_PPP = {"gas": 8.0, "dust": 6.0, "light": 8.0, "plasma": 8.0, "liquid": 20.0, "solid": 30.0}
 REPORT_LABELS = {"md": "Markdown (.md)", "txt": "Text (.txt)", "html": "HTML (.html)", "pdf": "PDF (.pdf)"}
 
 
@@ -46,6 +50,18 @@ class RenderDialog(QDialog):
         self.get_settings = get_settings
         self.qs = QSettings()
         lay = QVBoxLayout(self)
+
+        # render presets (named recipes for everything below)
+        g = QGroupBox("Render preset")
+        row = QHBoxLayout(g)
+        self.preset = QComboBox()
+        self.preset.setToolTip("Named output recipes: size, quality, engine, format and report. Also used by Batch render and `attractr batch`.")
+        self.btn_preset_save = QPushButton("Save as…")
+        self.btn_preset_del = QPushButton("Delete")
+        row.addWidget(self.preset, 1)
+        row.addWidget(self.btn_preset_save)
+        row.addWidget(self.btn_preset_del)
+        lay.addWidget(g)
 
         # size
         g = QGroupBox("Output size")
@@ -75,6 +91,9 @@ class RenderDialog(QDialog):
         self.ppp.setRange(0.1, 10000)
         self.ppp.setDecimals(1)
         self.points_label = QLabel("")
+        self.hint_label = QLabel("")
+        self.hint_label.setStyleSheet("color:#e0a040")
+        self.hint_label.setWordWrap(True)
         self.engine = QComboBox()
         self.engine.addItem("auto (best available)", "auto")
         for eid in selector.engine_ids():
@@ -92,6 +111,7 @@ class RenderDialog(QDialog):
         f.addRow("Tier", self.tier)
         f.addRow("Points / pixel", self.ppp)
         f.addRow("", self.points_label)
+        f.addRow("", self.hint_label)
         f.addRow("Engine", self.engine)
         f.addRow("Precision", self.precision)
         f.addRow("Supersampling", self.ss)
@@ -155,6 +175,9 @@ class RenderDialog(QDialog):
         self.ss.valueChanged.connect(self._update_estimate)
         self.btn_folder.clicked.connect(self._pick_folder)
         self.btn_render.clicked.connect(self._render)
+        self.preset.activated.connect(self._on_render_preset)
+        self.btn_preset_save.clicked.connect(self._save_render_preset)
+        self.btn_preset_del.clicked.connect(self._delete_render_preset)
         self.btn_close.clicked.connect(self.close)
         self.report_on.toggled.connect(self.report_fmt.setEnabled)
         self.report_on.toggled.connect(self.report_dyn.setEnabled)
@@ -165,7 +188,61 @@ class RenderDialog(QDialog):
         self._on_tier(self.tier.currentIndex())
         self.ss.setValue(int(self.qs.value("render/ss", 2)))
         self.splat.setValue(int(self.qs.value("render/splat", 0)))
+        self._fill_render_presets()
         self._update_estimate()
+
+    # ── render presets ─────────────────────────────────────────────────────────
+    def _fill_render_presets(self) -> None:
+        self.preset.clear()
+        self.preset.addItem("— current settings —", None)
+        for p in render_presets.all():
+            self.preset.addItem(p.name + ("" if p.builtin else " (user)"), p.name)
+            self.preset.setItemData(self.preset.count() - 1, p.summary, 3)  # Qt.ToolTipRole
+
+    def current_preset(self, name: str = "custom") -> RenderPreset:
+        """The dialog's values as a preset."""
+        return RenderPreset(
+            name, self.width.value(), self.height.value(), self.ppp.value(), self.ss.value(), self.splat.value(),
+            self.engine.currentData(), self.precision.currentData(), self.fmt.currentText(), int(self.bits.currentText()),
+            (self.report_fmt.currentData(),) if self.report_on.isChecked() else (), self.report_dyn.isChecked(),
+        )
+
+    def apply_preset(self, p: RenderPreset) -> None:
+        self.size_preset.setCurrentIndex(len(SIZE_PRESETS) - 1)  # Custom
+        self.width.setValue(p.width)
+        self.height.setValue(p.height)
+        self.tier.setCurrentIndex(len(QUALITY_TIERS) - 1)  # Custom
+        self.ppp.setValue(p.points_per_pixel)
+        self.ss.setValue(p.supersample)
+        self.splat.setValue(p.splat_radius)
+        self.engine.setCurrentIndex(max(0, self.engine.findData(p.engine)))
+        self.precision.setCurrentIndex(max(0, self.precision.findData(p.precision)))
+        self.fmt.setCurrentText(p.fmt)
+        self.bits.setCurrentText(str(p.bit_depth))
+        self.report_on.setChecked(bool(p.report_formats))
+        if p.report_formats:
+            self.report_fmt.setCurrentIndex(max(0, self.report_fmt.findData(p.report_formats[0])))
+        self.report_dyn.setChecked(p.dynamics)
+        self._update_estimate()
+
+    def _on_render_preset(self, idx: int) -> None:
+        name = self.preset.itemData(idx)
+        if name and name in render_presets:
+            self.apply_preset(render_presets.get(name))
+            self.btn_preset_del.setEnabled(not render_presets.get(name).builtin)
+
+    def _save_render_preset(self) -> None:
+        name, ok = QInputDialog.getText(self, "Save render preset", "Name:", text=f"{self.width.value()}×{self.height.value()} {self.ppp.value():g} ppp")
+        if not ok or not name.strip():
+            return
+        render_presets.save(self.current_preset(name.strip()))
+        self._fill_render_presets()
+        self.preset.setCurrentIndex(max(0, self.preset.findData(name.strip())))
+
+    def _delete_render_preset(self) -> None:
+        name = self.preset.currentData()
+        if name and render_presets.delete(name):
+            self._fill_render_presets()
 
     def _on_preset(self, idx: int) -> None:
         w, h = self.size_preset.itemData(idx)
@@ -184,9 +261,24 @@ class RenderDialog(QDialog):
             self.ppp.setValue(ppp)
         self._update_estimate()
 
+    def _budget_boost(self) -> float:
+        """Iteration multiplier of the current attractor (Poincaré sections plot sparsely)."""
+        try:
+            from attractr.core.render.pipeline import resolve_spec
+
+            return float(resolve_spec(self.get_settings()).boost)
+        except Exception:  # noqa: BLE001
+            return 1.0
+
     def _update_estimate(self) -> None:
-        pts = self.ppp.value() * self.width.value() * self.height.value()
-        self.points_label.setText(f"≈ {pts / 1e6:.0f} M points" if pts < 1e9 else f"≈ {pts / 1e9:.2f} G points")
+        boost = self._budget_boost()
+        pts = self.ppp.value() * self.width.value() * self.height.value() * boost
+        text = f"≈ {pts / 1e6:.0f} M points" if pts < 1e9 else f"≈ {pts / 1e9:.2f} G points"
+        if boost > 1:
+            text += f" (×{boost:g} — this attractor plots only a fraction of its steps)"
+        self.points_label.setText(text)
+        self.hint_label.setText(self.quality_hint(self.ppp.value()))
+        self.hint_label.setVisible(bool(self.hint_label.text()))
         caps = selector.probe("cpu")
         rate = 0.0
         for eid in ("gl_precision", "opencl"):
@@ -197,6 +289,21 @@ class RenderDialog(QDialog):
         mem = self.width.value() * self.height.value() * self.ss.value() ** 2 * 4 * 4 / (1024 * 1024)
         self.estimate.setText(f"{est}  · accumulation buffers ≈ {mem:.0f} MB{' (tiled)' if mem > 768 else ''}".strip(" ·"))
         _ = caps
+
+    def quality_hint(self, ppp: float) -> str:
+        """A warning when the current style wants more points per pixel than set."""
+        try:
+            style = self.get_settings().look.style
+        except Exception:  # noqa: BLE001 — settings provider may not be ready
+            return ""
+        rec = RECOMMENDED_PPP.get(style, 8.0)
+        if ppp >= rec:
+            return ""
+        return f"⚠ the {style.capitalize()} style looks best with ≥ {rec:g} points / pixel (now {ppp:g}); expect noise or holes"
+
+    def showEvent(self, e) -> None:  # noqa: N802 — the style may have changed since the dialog was built
+        super().showEvent(e)
+        self._update_estimate()
 
     def _pick_folder(self) -> None:
         d = QFileDialog.getExistingDirectory(self, "Output folder", self.folder.text())
@@ -212,7 +319,7 @@ class RenderDialog(QDialog):
         reports = [self.report_fmt.currentData()] if self.report_on.isChecked() else []
         job = RenderJob(s, Path(self.folder.text()).expanduser(), self.template.text() or DEFAULT_TEMPLATE,
                         fmt=self.fmt.currentText(), bit_depth=int(self.bits.currentText()), report_formats=reports,
-                        dynamics=self.report_dyn.isChecked())
+                        dynamics=self.report_dyn.isChecked(), checkpoint_every=60.0 * float(self.qs.value("render/checkpoint_minutes", 2.0)))
         for k, v in (("render/folder", self.folder.text()), ("render/template", self.template.text()),
                      ("render/report", "true" if self.report_on.isChecked() else "false"),
                      ("render/report_fmt", self.report_fmt.currentData()), ("render/size_preset", self.size_preset.currentIndex()),

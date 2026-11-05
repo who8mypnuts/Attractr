@@ -78,7 +78,7 @@ def _splat(cnt, dep, zmn, cvb, t, Ws, Hs, u, v, w, depth, cv, kern):
 
 
 @njit(cache=True, nogil=True, inline="always")
-def _color_value(code, qx, qy, qz, speed, radius, curv, idx_frac, fx, fy, fz, p):
+def _color_value(code, qx, qy, qz, speed, radius, curv, idx_frac, fx, fy, fz, fw, p):
     if code == 1:
         return qx
     if code == 2:
@@ -96,21 +96,22 @@ def _color_value(code, qx, qy, qz, speed, radius, curv, idx_frac, fx, fy, fz, p)
     if code == 8:
         return curv
     if code == 9:
-        return color_fn(fx, fy, fz, p)
+        return color_fn(fx, fy, fz, fw, p)
     return 0.0
 
 
 @njit(cache=True, nogil=True, inline="always")
-def _reseed(X, Y, Z, RS, i, ic, jitter):
+def _reseed(X, Y, Z, W, RS, i, ic, jitter):
     X[i] = ic[0] + (_rand(RS, i) - 0.5) * jitter
     Y[i] = ic[1] + (_rand(RS, i) - 0.5) * jitter
     Z[i] = ic[2] + (_rand(RS, i) - 0.5) * jitter
+    W[i] = ic[3]
 
 
 @njit(nogil=True, cache=True)
 def accumulate(
     t, lo, hi,
-    X, Y, Z, RS, PU, PV, PC, HAVE, DXp, DYp, DZp,
+    X, Y, Z, W, SEC, RS, PU, PV, PC, HAVE, DXp, DYp, DZp,
     p, dt, substeps, steps, t0,
     R, center, inv_radius, cx, cy, focal, persp, Ws, Hs,
     kern, gap_fill, color_code, do_plot,
@@ -127,6 +128,8 @@ def accumulate(
         x = X[i]
         y = Y[i]
         z = Z[i]
+        w = W[i]
+        psec = SEC[i]
         pu = PU[i]
         pv = PV[i]
         pc = PC[i]
@@ -141,25 +144,38 @@ def accumulate(
             oy = y
             oz = z
             for _k in range(substeps):
-                x, y, z = step(x, y, z, p, RS, i, tstep, dt)
+                x, y, z, w = step(x, y, z, w, p, RS, i, tstep, dt)
                 tstep += 1.0
             # ── divergence guard ───────────────────────────────────────────────
-            if not (math.isfinite(x) and math.isfinite(y) and math.isfinite(z)) or (
-                abs(x) > DIVERGE_LIMIT or abs(y) > DIVERGE_LIMIT or abs(z) > DIVERGE_LIMIT
+            if not (math.isfinite(x) and math.isfinite(y) and math.isfinite(z) and math.isfinite(w)) or (
+                abs(x) > DIVERGE_LIMIT or abs(y) > DIVERGE_LIMIT or abs(z) > DIVERGE_LIMIT or abs(w) > DIVERGE_LIMIT
             ):
-                _reseed(X, Y, Z, RS, i, ic, jitter)
+                _reseed(X, Y, Z, W, RS, i, ic, jitter)
                 x = X[i]
                 y = Y[i]
                 z = Z[i]
+                w = W[i]
                 restarts_t += 1
                 have = 0
                 continue
             if not do_plot:
                 continue
+            if HAS_SECTION:  # Poincaré section: plot only when the section function changes sign
+                sv = section_fn(x, y, z, w, p)
+                crossed = sv * psec < 0.0
+                psec = sv
+                if not crossed:
+                    continue
+            if HAS_PLOT:
+                fx, fy, fz = plot_fn(x, y, z, w, p)
+            else:
+                fx = x
+                fy = y
+                fz = z
             # ── project ───────────────────────────────────────────────────────
-            ux = (x - center[0]) * inv_radius
-            uy = (y - center[1]) * inv_radius
-            uz = (z - center[2]) * inv_radius
+            ux = (fx - center[0]) * inv_radius
+            uy = (fy - center[1]) * inv_radius
+            uz = (fz - center[2]) * inv_radius
             qx = R[0] * ux + R[1] * uy + R[2] * uz
             qy = R[3] * ux + R[4] * uy + R[5] * uz
             qz = R[6] * ux + R[7] * uy + R[8] * uz
@@ -193,7 +209,7 @@ def accumulate(
                     dyp = ddy
                     dzp = ddz
                 radius = math.sqrt(qx * qx + qy * qy + qz * qz)
-                cv = _color_value(color_code, qx, qy, qz, speed, radius, curv, idx_frac, x, y, z, p)
+                cv = _color_value(color_code, qx, qy, qz, speed, radius, curv, idx_frac, x, y, z, w, p)
             # ── splat (with optional gap filling to the previous point) ────────
             nseg = 1
             if gap_fill and have != 0:
@@ -221,6 +237,8 @@ def accumulate(
         X[i] = x
         Y[i] = y
         Z[i] = z
+        W[i] = w
+        SEC[i] = psec
         PU[i] = pu
         PV[i] = pv
         PC[i] = pc
@@ -233,42 +251,66 @@ def accumulate(
 
 
 @njit(nogil=True, cache=True)
-def sample_points(X, Y, Z, RS, p, dt, substeps, steps, t0, out, restarts, ic, jitter):  # noqa: E501
-    """Advance every trajectory ``steps`` times, writing each visited point into
-    ``out[i*steps + s, :]`` (used for framing / analysis).  Divergent trajectories are
-    re-seeded and their slots filled with NaN."""
+def sample_points(X, Y, Z, W, SEC, RS, p, dt, substeps, steps, t0, out, restarts, ic, jitter):  # noqa: E501
+    """Advance every trajectory ``steps`` times, writing ``out[i*steps + s] = (x, y, z, w,
+    px, py, pz)`` — the state (for seeding) and the plotted point (for framing).  Divergent
+    trajectories are re-seeded and their row is NaN; with a Poincaré section, steps that do
+    not cross it get NaN plotted columns."""
     n = X.shape[0]
     for i in range(n):
         x = X[i]
         y = Y[i]
         z = Z[i]
+        w = W[i]
+        psec = SEC[i]
         tstep = t0
         for s in range(steps):
             for _k in range(substeps):
-                x, y, z = step(x, y, z, p, RS, i, tstep, dt)
+                x, y, z, w = step(x, y, z, w, p, RS, i, tstep, dt)
                 tstep += 1.0
-            if not (math.isfinite(x) and math.isfinite(y) and math.isfinite(z)) or (
-                abs(x) > DIVERGE_LIMIT or abs(y) > DIVERGE_LIMIT or abs(z) > DIVERGE_LIMIT
+            if not (math.isfinite(x) and math.isfinite(y) and math.isfinite(z) and math.isfinite(w)) or (
+                abs(x) > DIVERGE_LIMIT or abs(y) > DIVERGE_LIMIT or abs(z) > DIVERGE_LIMIT or abs(w) > DIVERGE_LIMIT
             ):
-                _reseed(X, Y, Z, RS, i, ic, jitter)
+                _reseed(X, Y, Z, W, RS, i, ic, jitter)
                 x = X[i]
                 y = Y[i]
                 z = Z[i]
+                w = W[i]
                 restarts[i] += 1
-                out[i * steps + s, 0] = np.nan
-                out[i * steps + s, 1] = np.nan
-                out[i * steps + s, 2] = np.nan
+                for c in range(7):
+                    out[i * steps + s, c] = np.nan
                 continue
             out[i * steps + s, 0] = x
             out[i * steps + s, 1] = y
             out[i * steps + s, 2] = z
+            out[i * steps + s, 3] = w
+            if HAS_SECTION:
+                sv = section_fn(x, y, z, w, p)
+                crossed = sv * psec < 0.0
+                psec = sv
+                if not crossed:
+                    out[i * steps + s, 4] = np.nan
+                    out[i * steps + s, 5] = np.nan
+                    out[i * steps + s, 6] = np.nan
+                    continue
+            if HAS_PLOT:
+                fx, fy, fz = plot_fn(x, y, z, w, p)
+            else:
+                fx = x
+                fy = y
+                fz = z
+            out[i * steps + s, 4] = fx
+            out[i * steps + s, 5] = fy
+            out[i * steps + s, 6] = fz
         X[i] = x
         Y[i] = y
         Z[i] = z
+        W[i] = w
+        SEC[i] = psec
 
 
 @njit(nogil=True, cache=True)
-def lyapunov_kernel(x, y, z, p, RS, dt, substeps, steps, d0, renorm_every):
+def lyapunov_kernel(x, y, z, w, p, RS, dt, substeps, steps, d0, renorm_every):
     """Largest Lyapunov exponent by the two-trajectory (Benettin) method.
     Returns (sum of log stretch factors, number of renormalisations, diverged flag).
     The exponent is  sum / (renorms · renorm_every · substeps · dt)  for flows and
@@ -276,21 +318,23 @@ def lyapunov_kernel(x, y, z, p, RS, dt, substeps, steps, d0, renorm_every):
     x2 = x + d0
     y2 = y
     z2 = z
+    w2 = w
     total = 0.0
     renorms = 0
     tstep = 0.0
     for s in range(steps):
         for _k in range(substeps):
-            x, y, z = step(x, y, z, p, RS, 0, tstep, dt)
-            x2, y2, z2 = step(x2, y2, z2, p, RS, 1, tstep, dt)
+            x, y, z, w = step(x, y, z, w, p, RS, 0, tstep, dt)
+            x2, y2, z2, w2 = step(x2, y2, z2, w2, p, RS, 1, tstep, dt)
             tstep += 1.0
-        if not (math.isfinite(x) and math.isfinite(y) and math.isfinite(z)) or abs(x) > DIVERGE_LIMIT or abs(y) > DIVERGE_LIMIT or abs(z) > DIVERGE_LIMIT:
+        if not (math.isfinite(x) and math.isfinite(y) and math.isfinite(z) and math.isfinite(w)) or abs(x) > DIVERGE_LIMIT or abs(y) > DIVERGE_LIMIT or abs(z) > DIVERGE_LIMIT or abs(w) > DIVERGE_LIMIT:
             return total, renorms, 1
         if (s + 1) % renorm_every == 0:
             dx = x2 - x
             dy = y2 - y
             dz = z2 - z
-            d = math.sqrt(dx * dx + dy * dy + dz * dz)
+            dw = w2 - w
+            d = math.sqrt(dx * dx + dy * dy + dz * dz + dw * dw)
             if d <= 0.0 or not math.isfinite(d):
                 return total, renorms, 1
             total += math.log(d / d0)
@@ -299,4 +343,5 @@ def lyapunov_kernel(x, y, z, p, RS, dt, substeps, steps, d0, renorm_every):
             x2 = x + dx * f
             y2 = y + dy * f
             z2 = z + dz * f
+            w2 = w + dw * f
     return total, renorms, 0

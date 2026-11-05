@@ -28,6 +28,8 @@ TEMPLATES = {
     "Map (3-D)": "name: My 3-D Map\nkind: map\n\nparam a = 2.24 [-3, 3]\nparam b = 0.43 [-3, 3]\nparam c = -0.65 [-3, 3]\nparam d = -2.43 [-3, 3]\n\nx' = sin(a*y) - z*cos(b*x)\ny' = z*sin(c*x) - cos(d*y)\nz' = sin(x)\n",
     "Flow (ODE)": "name: My Flow\nkind: flow\ndt: 0.01\nic: 0.1 0.1 0.1\n\nparam a = 10 [0, 20]\nparam b = 28 [0, 50]\nparam c = 8/3 [0, 5]\n\ndx = a*(y - x)\ndy = x*(b - z) - y\ndz = x*y - c*z\n",
     "IFS (chaos game)": "name: My IFS\nkind: ifs\nic: 0 0 0\n\nparam s = 0.5 [0.3, 0.7]\n\nchoose {\n  1: x' = s*x;          y' = s*y\n  1: x' = s*x + (1-s);  y' = s*y\n  1: x' = s*x + (1-s)/2; y' = s*y + (1-s)\n}\n",
+    "Driven oscillator (w = time)": "name: My Driven Oscillator\nkind: flow\ndt: 0.01\nic: 0.1 0 0 0\n\nparam delta = 0.3 [0, 1]\nparam gamma = 0.5 [0, 1]\nparam omega = 1.2 [0.5, 2]\n\ndx = y\ndy = x - x^3 - delta*y + gamma*cos(omega*w)\ndz = 0\ndw = 1\nplot = x, y, 0\n",
+    "Poincare section": "name: My Section\nkind: flow\ndt: 0.01\nic: 0.1 0 0 0\n\nparam delta = 0.3 [0, 1]\nparam gamma = 0.5 [0, 1]\nparam omega = 1.2 [0.5, 2]\n\ndx = y\ndy = x - x^3 - delta*y + gamma*cos(omega*w)\ndz = 0\ndw = 1\nplot = x, y, 0\n# plot once per forcing period (sign change of the section function)\nsection = sin(omega*w/2)\n",
     "Symmetric icon": "name: My Icon\nkind: map\n\nparam lam = -2.5 [-4, -1]\nparam al = 5.0 [1, 8]\nparam be = -1.8 [-3, 0.5]\nparam ga = 1.0 [-2, 2]\nparam om = 0.0 [-1, 1]\nparam n = 3 [3, 12] int\n\nzz  = x*x + y*y\nren = re_pow(x, y, n)\nt   = lam + al*zz + be*ren\ncr  = re_pow(x, -y, n - 1)\nci  = im_pow(x, -y, n - 1)\nx'  = t*x - om*y + ga*cr\ny'  = t*y + om*x + ga*ci\ndepth = ren\n",
 }
 

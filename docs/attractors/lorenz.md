@@ -22,7 +22,7 @@ dz/dt = x · y − β · z
 | rho | 28 | [0, 50] | ρ (Rayleigh number) — heating from below. Chaos appears above ≈ 24.74. |
 | beta | 2.66667 | [0, 5] | β — geometric aspect ratio of the convection cells. |
 
-Integration: RK4, default dt = 0.005, initial condition (0.1, 0.0, 0.0).
+Integration: RK4, default dt = 0.005, initial condition (0.1, 0.0, 0.0, 0.0).
 
 ## References
 

@@ -13,6 +13,7 @@ For flows a ``deriv`` function is emitted and ``step`` applies the requested int
 from __future__ import annotations
 
 from attractr.core.formula.ast import (
+    SPECIAL_TARGETS,
     Assign,
     BinOp,
     BoolOp,
@@ -22,6 +23,7 @@ from attractr.core.formula.ast import (
     Expr,
     Num,
     Program,
+    Tuple,
     Unary,
     Var,
 )
@@ -36,12 +38,12 @@ class PyEmitter:
 
     def __init__(self, params: tuple[str, ...], state: dict[str, str] | None = None) -> None:
         self.params = {n: i for i, n in enumerate(params)}
-        self.state = state or {"x": "x", "y": "y", "z": "z"}
+        self.state = state or {"x": "x", "y": "y", "z": "z", "w": "w"}
 
     def name(self, n: str) -> str:
         if n in self.state:
             return self.state[n]
-        if n in ("x'", "y'", "z'"):
+        if n in ("x'", "y'", "z'", "w'"):
             return "_n" + n[0]
         if n in self.params:
             return f"p[{self.params[n]}]"
@@ -78,6 +80,8 @@ class PyEmitter:
             return f"({self.expr(e.left)} {e.op} {self.expr(e.right)})"
         if isinstance(e, Call):
             return self.call(e)
+        if isinstance(e, Tuple):
+            return ", ".join(self.expr(a) for a in e.items)
         raise TypeError(type(e))
 
     def call(self, c: Call) -> str:
@@ -99,7 +103,7 @@ class PyEmitter:
 def _emit_assign_block(stmts: tuple[Assign, ...], em: PyEmitter, indent: str) -> list[str]:
     out = []
     for a in stmts:
-        if a.target in ("depth", "color"):
+        if a.target in SPECIAL_TARGETS:
             continue
         out.append(f"{indent}{em.name(a.target)} = {em.expr(a.expr)}")
     return out
@@ -114,7 +118,7 @@ def _find_special(prog: Program, target: str) -> Assign | None:
 
 def generate_map_step(prog: Program, an: Analysis) -> str:
     em = PyEmitter(an.params)
-    lines = [NJIT, "def step(x, y, z, p, rs, i, t_step, dt):", "    _nx = x; _ny = y; _nz = z"]
+    lines = [NJIT, "def step(x, y, z, w, p, rs, i, t_step, dt):", "    _nx = x; _ny = y; _nz = z; _nw = w"]
     for stmt in prog.body:
         if isinstance(stmt, Choose):
             total = sum(b.prob for b in stmt.branches)
@@ -132,62 +136,96 @@ def generate_map_step(prog: Program, an: Analysis) -> str:
             lines.extend(_emit_assign_block((stmt,), em, "    "))
     depth = _find_special(prog, "depth")
     if depth is not None:
-        em_new = PyEmitter(an.params, {"x": "_nx", "y": "_ny", "z": "_nz"})
+        em_new = PyEmitter(an.params, {"x": "_nx", "y": "_ny", "z": "_nz", "w": "_nw"})
         lines.append(f"    _nz = {em_new.expr(depth.expr)}")
-    lines.append("    return _nx, _ny, _nz")
+    lines.append("    return _nx, _ny, _nz, _nw")
     return "\n".join(lines)
 
 
 def generate_flow_step(prog: Program, an: Analysis, integrator: str) -> str:
     em = PyEmitter(an.params)
-    lines = [NJIT, "def deriv(x, y, z, p, rs, i, t_step):", "    _dx = 0.0; _dy = 0.0; _dz = 0.0"]
+    lines = [NJIT, "def deriv(x, y, z, w, p, rs, i, t_step):", "    _dx = 0.0; _dy = 0.0; _dz = 0.0; _dw = 0.0"]
     for stmt in prog.body:
         assert isinstance(stmt, Assign)
-        if stmt.target in ("depth", "color"):
+        if stmt.target in SPECIAL_TARGETS:
             continue
         tgt = "_" + stmt.target if stmt.is_deriv else em.name(stmt.target)
         lines.append(f"    {tgt} = {em.expr(stmt.expr)}")
-    lines.append("    return _dx, _dy, _dz")
-    lines += ["", NJIT, "def step(x, y, z, p, rs, i, t_step, dt):"]
+    lines.append("    return _dx, _dy, _dz, _dw")
+    lines += ["", NJIT, "def step(x, y, z, w, p, rs, i, t_step, dt):"]
     if integrator == "euler":
         lines += [
-            "    k1x, k1y, k1z = deriv(x, y, z, p, rs, i, t_step)",
-            "    return x + dt * k1x, y + dt * k1y, z + dt * k1z",
+            "    k1x, k1y, k1z, k1w = deriv(x, y, z, w, p, rs, i, t_step)",
+            "    return x + dt * k1x, y + dt * k1y, z + dt * k1z, w + dt * k1w",
         ]
     elif integrator == "rk2":
         lines += [
-            "    k1x, k1y, k1z = deriv(x, y, z, p, rs, i, t_step)",
+            "    k1x, k1y, k1z, k1w = deriv(x, y, z, w, p, rs, i, t_step)",
             "    h = 0.5 * dt",
-            "    k2x, k2y, k2z = deriv(x + h * k1x, y + h * k1y, z + h * k1z, p, rs, i, t_step)",
-            "    return x + dt * k2x, y + dt * k2y, z + dt * k2z",
+            "    k2x, k2y, k2z, k2w = deriv(x + h * k1x, y + h * k1y, z + h * k1z, w + h * k1w, p, rs, i, t_step)",
+            "    return x + dt * k2x, y + dt * k2y, z + dt * k2z, w + dt * k2w",
         ]
     else:  # rk4
         lines += [
             "    h = 0.5 * dt",
-            "    k1x, k1y, k1z = deriv(x, y, z, p, rs, i, t_step)",
-            "    k2x, k2y, k2z = deriv(x + h * k1x, y + h * k1y, z + h * k1z, p, rs, i, t_step)",
-            "    k3x, k3y, k3z = deriv(x + h * k2x, y + h * k2y, z + h * k2z, p, rs, i, t_step)",
-            "    k4x, k4y, k4z = deriv(x + dt * k3x, y + dt * k3y, z + dt * k3z, p, rs, i, t_step)",
+            "    k1x, k1y, k1z, k1w = deriv(x, y, z, w, p, rs, i, t_step)",
+            "    k2x, k2y, k2z, k2w = deriv(x + h * k1x, y + h * k1y, z + h * k1z, w + h * k1w, p, rs, i, t_step)",
+            "    k3x, k3y, k3z, k3w = deriv(x + h * k2x, y + h * k2y, z + h * k2z, w + h * k2w, p, rs, i, t_step)",
+            "    k4x, k4y, k4z, k4w = deriv(x + dt * k3x, y + dt * k3y, z + dt * k3z, w + dt * k3w, p, rs, i, t_step)",
             "    s = dt / 6.0",
             "    return (x + s * (k1x + 2.0 * k2x + 2.0 * k3x + k4x),",
             "            y + s * (k1y + 2.0 * k2y + 2.0 * k3y + k4y),",
-            "            z + s * (k1z + 2.0 * k2z + 2.0 * k3z + k4z))",
+            "            z + s * (k1z + 2.0 * k2z + 2.0 * k3z + k4z),",
+            "            w + s * (k1w + 2.0 * k2w + 2.0 * k3w + k4w))",
         ]
     return "\n".join(lines)
 
 
+def _temps_prelude(prog: Program, em: PyEmitter) -> list[str]:
+    """Temporaries recomputed from the *current* state (for colour / plot / section)."""
+    out = []
+    for s in prog.body:
+        if isinstance(s, Assign) and s.is_temp:
+            out.append(f"    {em.name(s.target)} = {em.expr(s.expr)}")
+    return out
+
+
 def generate_color_fn(prog: Program, an: Analysis) -> str:
     color = _find_special(prog, "color")
-    lines = [NJIT, "def color_fn(x, y, z, p):"]
+    lines = [NJIT, "def color_fn(x, y, z, w, p):"]
     if color is None:
         lines.append("    return 0.0")
     else:
         em = PyEmitter(an.params)
-        # temporaries used by the colour expression must be recomputed from the *new* state
-        for s in prog.body:
-            if isinstance(s, Assign) and s.is_temp:
-                lines.append(f"    {em.name(s.target)} = {em.expr(s.expr)}")
+        lines += _temps_prelude(prog, em)
         lines.append(f"    return float({em.expr(color.expr)})")
+    return "\n".join(lines)
+
+
+def generate_plot_fn(prog: Program, an: Analysis) -> str:
+    """``plot_fn(x, y, z, w, p) -> (px, py, pz)``: what gets drawn (default: the state)."""
+    plot = _find_special(prog, "plot")
+    lines = [NJIT, "def plot_fn(x, y, z, w, p):"]
+    if plot is None:
+        lines.append("    return x, y, z")
+    else:
+        em = PyEmitter(an.params)
+        lines += _temps_prelude(prog, em)
+        assert isinstance(plot.expr, Tuple)
+        lines.append("    return " + ", ".join(f"float({em.expr(e)})" for e in plot.expr.items))
+    return "\n".join(lines)
+
+
+def generate_section_fn(prog: Program, an: Analysis) -> str:
+    """``section_fn(x, y, z, w, p) -> float``: a point is plotted only when this changes sign."""
+    sec = _find_special(prog, "section")
+    lines = [NJIT, "def section_fn(x, y, z, w, p):"]
+    if sec is None:
+        lines.append("    return 1.0")
+    else:
+        em = PyEmitter(an.params)
+        lines += _temps_prelude(prog, em)
+        lines.append(f"    return float({em.expr(sec.expr)})")
     return "\n".join(lines)
 
 
@@ -204,6 +242,9 @@ def generate_module_source(prog: Program, an: Analysis, integrator: str = "rk4")
         f"DIMS = {an.dims}",
         f"PARAM_NAMES = {tuple(an.params)!r}",
         f"HAS_COLOR = {an.has_color!r}",
+        f"HAS_PLOT = {an.has_plot!r}",
+        f"HAS_SECTION = {an.has_section!r}",
+        f"USES_W = {an.uses_w!r}",
         f"INTEGRATOR = {integrator!r}",
         "",
     ]
@@ -211,4 +252,5 @@ def generate_module_source(prog: Program, an: Analysis, integrator: str = "rk4")
         body = generate_flow_step(prog, an, integrator)
     else:
         body = generate_map_step(prog, an)
-    return "\n".join(head) + body + "\n\n" + generate_color_fn(prog, an) + "\n"
+    return ("\n".join(head) + body + "\n\n" + generate_color_fn(prog, an) + "\n\n"
+            + generate_plot_fn(prog, an) + "\n\n" + generate_section_fn(prog, an) + "\n")

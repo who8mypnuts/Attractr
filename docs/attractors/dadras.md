@@ -24,7 +24,7 @@ dz/dt = d · x · y − e · z
 | d | 2 | [1, 4] | x·y coupling into z. |
 | e | 9 | [5, 15] | Damping of z. |
 
-Integration: RK4, default dt = 0.005, initial condition (1.1, 2.1, -2.0).
+Integration: RK4, default dt = 0.005, initial condition (1.1, 2.1, -2.0, 0.0).
 
 ## References
 

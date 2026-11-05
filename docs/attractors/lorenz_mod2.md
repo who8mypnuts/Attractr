@@ -23,7 +23,7 @@ dz/dt = −z + x · (b · y + z)
 | c | 9.9 | [5, 15] |  |
 | d | 1 | [0, 2] |  |
 
-Integration: RK4, default dt = 0.01, initial condition (0.1, 0.1, 0.1).
+Integration: RK4, default dt = 0.01, initial condition (0.1, 0.1, 0.1, 0.0).
 
 ## Source (`.atr`)
 

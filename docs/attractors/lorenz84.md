@@ -23,7 +23,7 @@ dz/dt = b · x · y + x · z − z
 | F | 8 | [0, 12] | Thermal forcing (equator–pole). |
 | G | 1 | [0, 3] | Land–sea thermal forcing. |
 
-Integration: RK4, default dt = 0.01, initial condition (0.1, 0.1, 0.1).
+Integration: RK4, default dt = 0.01, initial condition (0.1, 0.1, 0.1, 0.0).
 
 ## References
 

@@ -744,7 +744,8 @@ milestone is the execution order.
 | M3 GUI shell | ✅ done | document/undo, progressive preview worker, viewport trackball/HUD/probe, all panels, render dialog + queue, dark theme, logo, presets/daily/codes, autosave/recovery, tips |
 | M4 Editors & panels | ✅ done | gradient editor (+ggr), formula editor (highlighter, errors, completion, live apply, probe badge), XY pad, mutate grid, search, caption overlay, gallery, stats/system panels |
 | M5 Animator | ✅ done | timeline/keys/easing, helpers (turntable, morph, sweep, palette cycle, zoom, orbit trace), locked framing, resumable sequences, motion blur, ffmpeg presets, timeline panel, animate dialog, CLI |
-| M6 Polish | ✅ mostly | 26 tier-2 attractors (79 total), procedural backgrounds, worker-process architecture (no GIL stalls), kernel warm-up, kernel variant specialisation (2–5× CPU speed-up), docs, generated attractor pages, PyInstaller spec. **Deferred:** i18n (strings are plain Python; a translation layer is future work) |
+| M6 Polish | ✅ mostly | 26 tier-2 attractors (79 total; 113 after the post-plan additions, see changelog), procedural backgrounds, worker-process architecture (no GIL stalls), kernel warm-up, kernel variant specialisation (2–5× CPU speed-up), docs, generated attractor pages, PyInstaller spec. **i18n:** scaffolding in place (`attractr/i18n.py`: `tr()`, translator loading, `resources/i18n/`); strings are not yet wrapped — see docs/development.md |
+| Post-plan round | ✅ done | everything in `suggested-improvements.md`: DSL `w` / `plot` / `section` / `boost`, 34 attractors + 18 presets, GPU develop pass, progressive renders with Finish-now + checkpoint/resume, slider ergonomics, drag & drop, render presets + batch + notifications, quality hints, cache limit, polynomial-map search, SVG export, i18n scaffolding. Open items are listed in `suggested-improvements.md §3`. |
 
 Deviations from the original plan worth knowing:
 

@@ -119,6 +119,65 @@ trajectory).
 | Julia (complex 2-D) | N | 2 | special case c_j = 0 (kept as separate entry for discoverability) | c_re=-0.7 c_im=0.27 |
 | Orbit Trace (animation mode) | A | 1 | not an attractor — single ordered trajectory drawn incrementally | — |
 
+## 3b. Library extensions (Tier 3 — added after the plan, see `suggested-improvements.md`)
+
+All verified with the Lyapunov probe at their defaults (λ₁ > 0 unless noted). Sources: **S** =
+suggested-improvements list, **L** = literature.
+
+### Maps
+
+| Name | Src | Equations | Params (defaults) | Notes |
+|---|---|---|---|---|
+| Zaslavskii web map | S L | `mu = (1-exp(-r))/r` `x' = mod(x + v*(1+mu*y) + eps*v*mu*cos(2*pi*x), 1)` `y' = exp(-r)*(y + eps*cos(2*pi*x))` `plot = x, y*yscale, 0` | v=133.33 r=3 eps=0.3 yscale=20 | y is squeezed by e⁻ʳ, hence the plot stretch |
+| Cathala | S | `x' = a*x + y` `y' = b + x^2` | a=0.7 b=-0.82 | |
+| Quadrup-Two (Martin) | S L | `x' = y - sign(x)*sin(log(abs(b*x-c)))*atan(log(abs(c*x-b))^2)` `y' = a - x` | a=34 b=1 c=5 | |
+| Threeply (Martin) | S L | `x' = y - sign(x)*abs(sin(x)*cos(b) + c - x*sin(a+b+c))` `y' = a - x` | a=-55 b=-1 c=-42 | large extent (~10³) |
+| Ushiki | S L | `x' = (a - x - b*y)*x` `y' = (c - y - d*x)*y` | a=3.7 b=0.1 c=3.5 d=0.15 | |
+| Gumowski–Mira (extended) | S | as GM with `b` exposed and `f(x)` = mix(rational, exponential, s) | a=0.008 b=0.05 mu=-0.7 s=0 | |
+| Symmetric Icon (extended) | S L | icon + `de*Re((z/|z|)^(n*p))*|z|` term | λ=-2.08 α=1 β=-0.1 γ=0.167 δ=0 ω=0 n=7 p=1 | 8 curated presets from *Symmetry in Chaos* |
+| Chaos game (n-gon with rules) | S L | `k` = random vertex, re-drawn when forbidden by `avoid` (uses `w` as memory) `x' = x + (cos(2πk/n + twist) - x)*s` … `w' = k` | n=5 s=0.5 avoid=1 twist=0 | restricted chaos game; presets: pentagon/hexagon/square/Sierpinski/spiral |
+| Lorenz (Poincaré section) | S | Lorenz + `plot = x, y, 0` `section = z - height` | height=27, `boost: 40` | the "Lorenz map" |
+| Rössler (Poincaré section) | S | Rössler + `plot = x, z, 0` `section = y` | `boost: 150` | both crossing directions are kept |
+
+Dropped after testing: *Burning Ship orbit cloud* (escape-time iteration has no bounded
+attractor — framing is dominated by escaping orbits), *Duffing–van der Pol map* (no chaotic
+parameter set found in a quick search), *Hadley* (identical to Lorenz-84 → curated preset
+"Hadley spring" instead), *Langford* (identical to Aizawa).
+
+### Flows
+
+| Name | Src | Equations | Params (defaults) | dt · IC |
+|---|---|---|---|---|
+| Nosé–Hoover | S L | `dx = y` `dy = -x + y*z` `dz = a - y^2` | a=1.5 | 0.02 · (0,5,0); conservative |
+| Wei (no equilibrium) | S L | `dx = -y` `dy = x + z` `dz = 2*y^2 + x*z - a` | a=0.35 | 0.005 · (0.5,0.5,0) jitter 0.05 — small basin |
+| Thomas (asymmetric) | S | `dx = sin(y) - b1*x` `dy = sin(z) - b2*y` `dz = sin(x) - b3*z` | b=(0.132, 0.093, 0.172) | 0.05; values found by a random λ₁ scan (most asymmetric triples are quasi-periodic) |
+| Wang–Sun | S L | `dx = a*x + c*y*z` `dy = b*x + d*y - x*z` `dz = e*z + f*x*y` | a=0.2 b=-0.01 c=1 d=-0.4 e=-1 f=-1 | 0.02 |
+| Anishchenko–Astakhov | S L | `dx = m*x + y - x*z` `dy = -x` `dz = -g*z + g*step(0,x)*x^2` | m=1.2 g=0.5 | 0.02 |
+| Linz–Sprott jerk | S L | `dz = -a*z - y + abs(x) - 1` | a=0.6 | 0.02 |
+| Sprott simplest quadratic jerk | S L | `dz = -a*z + y^2 - x` | a=2.017 | 0.02 · (-0.5,0,0) jitter 0.05 — small basin |
+| Sprott cubic jerk | S L | `dz = -a*z + x*y^2 - x` | a=2.028 | 0.02 · (0.5,0,0) jitter 0.02 — small basin |
+| Malasoma jerk | S L | `dz = -a*z + x*y - x` | a=2.05 | 0.02 · (1,0,0) jitter 0.02 — weakly chaotic (λ₁ ≈ 0.02) |
+| Duffing (driven) | S L | `dx = y` `dy = x - x^3 - delta*y + gamma*cos(omega*w)` `dw = 1` `plot = x, y, 0` | δ=0.3 γ=0.5 ω=1.2 | 0.01 |
+| Duffing (stroboscopic map) | S L | + `section = sin(omega*w/2 - phase*pi/360)` | + phase=0 | `boost: 300` |
+| Ueda | S L | `dx = y` `dy = -k*y - x^3 + B*cos(w)` `dw = 1` | k=0.05 B=7.5 | 0.01 · (2.5,0,0) |
+| Ueda (stroboscopic map) | S L | + `section = sin(w/2)` | | `boost: 300` |
+| Van der Pol (driven) | S L | `dx = y` `dy = mu*(1-x^2)*y - x + A*cos(omega*w)` `dw = 1` `plot = x, y*yscale, 0` | μ=5 A=5 ω=2.463 yscale=0.25 | 0.005; Parlitz–Lauterborn chaotic case (the textbook μ=8.53, A=1.2, ω=2π/10 set is periodic at this dt) |
+| Rössler hyperchaos (4-D) | S L | `dx = -y - z` `dy = x + a*y + w` `dz = b + x*z` `dw = -c*z + d*w` | a=0.25 b=3 c=0.5 d=0.05 | 0.005 · (-10,-6,0,10) |
+| Lorenz–Stenflo (4-D) | S L | `dx = sigma*(y-x) + s*w` `dy = x*(r-z) - y` `dz = x*y - b*z` `dw = -x - sigma*w` | σ=1 r=26 b=0.7 s=1.5 | 0.005 · (1,1,1,1) |
+
+### IFS
+
+| Name | Maps | Params |
+|---|---|---|
+| Sierpinski carpet | 8 × ratio s | s=1/3 |
+| Vicsek fractal | 5 × ratio s, edge or corner layout | s=1/3 corner=0 |
+| Koch curve | 4 × ratio s, middle two rotated ±deg | s=1/3 deg=60 |
+| Lévy C curve | 2 × ratio r rotated ±th | r=1/√2 th=45 |
+| Pythagoras tree | 2 square-stacking maps + condensation map `x' = rand(); y' = rand()` (weight 0.3) | deg=45 |
+| de Rham curve | `d0(z) = a z`, `d1(z) = a + (1-a) z` (optionally on conj z) | ar=0.5 ai=0.2887 conj=1; presets Koch / Peano / Lévy C / Cesàro |
+| Maple leaf (Barnsley) | 4 affine maps (Bourke coefficients) | spread=1 |
+| Fractal tree (Barnsley) | trunk + 2 rotated branches + bud | deg=45 shrink=0.6 |
+
 ## 4. Parameter metadata carried for every attractor
 
 For each parameter: symbol, display name, default, soft range (slider), hard range

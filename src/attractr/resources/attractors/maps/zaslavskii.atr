@@ -1,0 +1,20 @@
+name: Zaslavskii web map
+family: Maps
+desc: George Zaslavskii's dissipative kicked-rotor map (1978). A periodic kick wrapped modulo 1 in x builds a "stochastic web" — filaments of chaos woven through the torus.
+ref: G. M. Zaslavskii, "The simplest case of a strange attractor", Phys. Lett. A 69 (1978)
+tags: map, 2d, classic
+dims: 2
+ic: 0.3 0.1 0
+jitter: 0.2
+warmup: 200
+palette: ice
+
+param v = 133.33 [50, 300] "ν — kick strength (the classic value is 400/3)."
+param r = 3.0 [0.5, 6] "r — dissipation; larger squeezes y towards zero."
+param eps = 0.3 [0, 1] "ε — amplitude of the cosine kick."
+param yscale = 20 [1, 60] "Vertical stretch of the picture (y is squeezed by e⁻ʳ)."
+
+mu = (1 - exp(-r))/r
+x' = mod(x + v*(1 + mu*y) + eps*v*mu*cos(2*pi*x), 1)
+y' = exp(-r)*(y + eps*cos(2*pi*x))
+plot = x, y*yscale, 0

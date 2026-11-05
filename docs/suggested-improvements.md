@@ -1,104 +1,67 @@
-# Suggested improvements
+# Suggested improvements — status
 
-Ideas that are **not implemented** — collected here for review. Nothing in this file
-changes the program; each item notes the effort and what it would touch.
+This file started as a wish-list after the plan was implemented. Everything in the
+original list has now been done (see the *Post-plan additions* section of
+[changelog.md](changelog.md)); the table below records where each item landed, followed
+by the items that were tried and dropped and a fresh list of what could come next.
 
-## 1. More attractors for the library
+## 1. Implemented
 
-All of these fit the existing formula DSL (maps, flows or IFS with `choose`), so each one
-is a single `.atr` file once its parameters are verified with *Search*/the Lyapunov probe.
+| Item | Where |
+|---|---|
+| DSL: 4th state variable `w` (`w'`, `dw`, `ic: x y z w`) | `core/formula/*`, all four engines; [formula_dsl.md](formula_dsl.md) |
+| DSL: `plot = ex, ey[, ez]` | same |
+| DSL: `section = expr` (Poincaré sections, gap filling auto-off) + `boost:` header | same |
+| 34 new attractors (driven oscillators, stroboscopic maps, 4-D hyperchaos, sections, jerk systems, Zaslavskii, Cathala, Martin maps, Ushiki, icon extension, restricted chaos game, 8 IFS classics) + 18 curated presets | `resources/attractors/**`, `resources/presets/curated.json`; [attractor_catalog.md §3b](attractor_catalog.md) |
+| GPU develop pass | `core/render/develop/gpu_develop.py`, `shaders/develop.comp`; [render_styles.md](render_styles.md) |
+| Progressive final renders: Finish now, checkpoints, resume, live job thumbnails | `core/render/checkpoint.py`, engines, `gui/controllers/render_job.py`, Jobs panel; [checkpoints.md](checkpoints.md) |
+| Slider ergonomics (wheel/arrow modifiers, nudge buttons, value history, copy/paste) | `gui/widgets/slider_spin.py` |
+| Drag & drop (palettes, gallery images, `.atr`, `.attractr`, gradients, share codes) | `gui/dragdrop.py`, viewport, gallery, gradient editor |
+| Render presets, batch rendering (GUI + `attractr batch`), queue notification | `core/project/render_presets.py`, `core/project/batch.py`, `cli/cmd_batch.py`, render dialog, main window |
+| Per-style recommended quality hint | render dialog (`RECOMMENDED_PPP`) |
+| Thumbnail cache limit | `core/io/cache.py`, Preferences |
+| Search panel polynomial-map mode | `gui/panels/search_panel.py` |
+| SVG orbit export | `core/io/svg_export.py`, `cli/cmd_svg.py`, File menu |
+| i18n scaffolding | `attractr/i18n.py`, `resources/i18n/` (strings not yet wrapped) |
+| Robust framing / Lyapunov seeding for small-basin systems | `core/render/framing.py`, `core/analysis/lyapunov.py` |
 
-### Maps (2-D / 3-D)
+## 2. Tried and dropped
 
-| Name | Equations (DSL) | Why it is interesting |
-|---|---|---|
-| **Zaslavskii web map** | `x' = mod(x + v*(1 + mu*y) + eps*v*mu*cos(2*pi*x), 1)` `y' = exp(-r)*(y + eps*cos(2*pi*x))` | stochastic web / dissipative sea; classic textbook map |
-| **Cathala** | `x' = a*x + y` `y' = b + x^2` | minimal quadratic map with a thin, folded attractor |
-| **Martin "Quadrup-Two"** | `x' = y - sign(x)*sin(log(abs(b*x - c)))*atan((log(abs(c*x - b)))^2)` `y' = a - x` | Hopalong's wilder sibling (lace-like bursts) |
-| **Martin "Threeply"** | `x' = y - sign(x)*abs(sin(x)*cos(b) + c - x*sin(a + b + c))` `y' = a - x` | third Martin map from the *Scientific American* column |
-| **Chossat–Golubitsky "Symmetry in Chaos" icons (D_n with extra terms)** | extend `symmetric_icon` with the `delta*|z|^2` and `p` (pinwheel) terms | covers every icon in the book's gallery |
-| **Ushiki** | `x' = (a - x - b*y)*x` `y' = (c - y - d*x)*y` | predator–prey map with a spiky 2-D attractor |
-| **Dejong variants (“Strange Attractor No. 4–7”)** | `x' = sin(a*y) + c*cos(a*x) + ... *cos(b*x)` families from Pickover's *Computers, Pattern, Chaos and Beauty* | cheap additions with known-good constants |
-| **Burning Ship / Mandelbrot escape as IFS-like map** | `x' = x^2 - y^2 + cx` `y' = 2*abs(x*y) + cy` for many random starts with escape reseeding | gives a "chaotic fill" view of escape-time fractals |
-| **Gumowski–Mira variants** | `x' = y + a*y*(1 - b*y^2) + f(x)` with different `f` | several classic GM shapes ("pearl", "cloud") |
-| **Duffing–van der Pol map** | `x' = y` `y' = -b*x + (a - c*y^2)*y` | bridge between the Duffing and van der Pol families |
-| **Lorenz map / Rössler map** (Poincaré sections) | needs a small DSL extension (`section = expr`) to sample a flow only when a plane is crossed | 1-D/2-D return maps are a staple of chaos teaching |
+* **Burning Ship / Mandelbrot "orbit cloud"** — escape-time iterations have no bounded
+  attractor; the framing sample is dominated by escaping orbits. Would need a
+  Buddhabrot-style renderer (plot only orbits that escape, framed on the parameter plane)
+  — a different program.
+* **Duffing–van der Pol map** `x' = y, y' = -b x + (a - c y²) y` — no chaotic parameter
+  set found in a quick random scan; not included.
+* **Hadley** / **Langford** as separate entries — identical to Lorenz-84 / Aizawa; a
+  curated preset ("Hadley spring") covers the requested regime instead.
 
-### Flows (3-D ODEs)
+## 3. What could come next
 
-| Name | Equations (DSL) | Parameters |
-|---|---|---|
-| **Nosé–Hoover (a ≠ 1)** | `dx = y` `dy = -x + y*z` `dz = a - y^2` | a = 1.5 |
-| **Sprott–Jafari "NE" family** | e.g. NE6: `dx = y` `dy = -x + y*z` `dz = a - y^2`-style minimal systems with no equilibria | a = 0.5… |
-| **Hadley (full form)** | `dx = -y^2 - z^2 - a*x + a*F` `dy = x*y - b*x*z - y + G` `dz = b*x*y + x*z - z` | already present as Lorenz-84; add the b = 4, F = 8, G = 1.2 "spring" preset |
-| **Langford / Aizawa-Langford (c ≠ 0.6)** | present as Aizawa; add Langford's original parameterisation | a=0.95 b=0.7 c=0.6 d=3.5 e=0.25 f=0.1 |
-| **Thomas variants (non-cyclic)** | `dx = sin(y) - b*x` `dy = sin(z) - b*y` `dz = sin(x) - b*z` with `b` per axis | interesting symmetry breaking |
-| **Rayleigh–Bénard / Lorenz–Stenflo (4-D)** | needs a 4th state variable | would require the DSL to support `w'`/`dw` |
-| **Wang–Sun**, **Zhou**, **Pehlivan**, **Wei**, **Sprott Case-A+**: | many quadratic 3-D flows from the 2010s literature | each is 3 lines of DSL |
-| **Anishchenko–Astakhov** | `dx = m*x + y - x*z` `dy = -x` `dz = -g*z + g*step(0, x)*x^2` | piecewise; m = 1.2, g = 0.5 |
-| **Rössler hyperchaos (4-D)** | needs 4-D state | |
-| **Elegant chaos (Sprott 2010) collection** | dozens of "elegant" jerk systems `dz = -a*z - y + f(x)` with |f| = abs, sign, x^2… | the book lists them all with parameters |
-| **Driven systems** (Duffing, van der Pol, Ueda) | `dt = 1` as a third state and plot `(x, y)` only | needs a "plot only these coordinates" option in the DSL (e.g. `plot = x, y, 0`) |
-
-### IFS / chaos-game additions
-
-Sierpinski carpet (8 maps), Vicsek fractal, Koch snowflake (4 maps), Lévy C-curve,
-Pythagoras tree, **de Rham curves**, **Barnsley's "leaf" and "tree"**, Hutchinson random
-trees, the **"Chaos game on a regular n-gon with restriction rules"** family
-(e.g. pentagon, no repeated vertex) — each a short `choose { … }` block.
-
-### Needed DSL extensions to unlock the rest
-
-* `w'` / `dw` — a 4th state variable (hyperchaotic systems, driven oscillators).
-* `plot = expr, expr, expr` — choose what is drawn (Poincaré sections, projections).
-* `section = expr` — sample a flow only when an expression changes sign.
-
-## 2. Three program improvements
-
-1. **GL 3.3 point-splat engine (`gl_points`)** — planned in M2 and still deferred. It
-   would give hardware acceleration on macOS (OpenGL 4.1, no compute) and on older
-   Intel/ARM drivers. Design: trajectories live in two RGBA32F ping-pong textures; a
-   fragment shader advances them (same generated `step()`), a vertex shader reads the
-   state texture and emits `gl_Points` with additive blending into an R32F framebuffer.
-   Effort: ~2 days; touches `core/render/engines/gl_points.py` and a new shader pair.
-2. **GPU develop pass + "hot" look changes on the GPU** — today the histogram is read
-   back to NumPy and developed on the CPU (≈ 30–80 ms at 1024², seconds at 8K). Running
-   tone-mapping, palette lookup and lighting in a compute/fragment shader would make
-   gradient/gamma edits instant even for full-size renders kept on the GPU, and allow a
-   16K "print preview" without readback. Effort: ~2 days; `develop.comp`, a GPU
-   percentile (histogram reduction), `DevelopController` selecting the GPU path.
-3. **Progressive refinement for final renders + pause/resume** — the precision engine
-   already works in passes; exposing them as a *progressive* final render (show the
-   image improving in the viewport, allow "stop here and save", save/load checkpoints of
-   the accumulation buffers as `.npz`) would let very long renders survive interruptions
-   and let users judge quality early. Effort: ~1 day (job checkpoint files, a "Finish
-   now" button, resuming passes from stored buffers).
-
-## 3. Three quality-of-life improvements
-
-1. **Parameter "nudge + scrub" ergonomics** — `Ctrl`-wheel over a slider for fine steps,
-   arrow keys with `Shift`/`Ctrl` multipliers, and a small "±10 % / ±1 %" button pair on
-   each `SliderSpin`; plus a *parameter history* drop-down (last 20 values) so a good
-   value found by accident can be recovered without undo-stepping through everything.
-2. **Palette and preset drag-and-drop** — drag a palette swatch from the gradient
-   library onto the viewport to apply it, drag a gallery image onto the viewport to
-   re-open its settings, and drag `.atr` files onto the window to import them. All three
-   are a `dragEnterEvent/dropEvent` on the viewport plus existing functions.
-3. **Render presets & batch** — named render presets ("Instagram 1080²", "A3 print 300 dpi
-   16-bit + PDF report") in the render dialog, and a "batch render queue from a folder of
-   `.attractr` projects / a preset list" command (`attractr batch dir/`) so an overnight
-   run produces a whole portfolio with reports. Also a desktop notification when the
-   queue finishes.
-
-## 4. Smaller items noticed during implementation
-
-* The **Solid** style needs ≥ 20 points/pixel to look clean; a per-style "recommended
-  quality" hint in the render dialog would help.
-* Thumbnails for *user* formulas are keyed by content hash, so editing a formula
-  generates new cache files; a cache pruning preference (max MB) would keep
-  `~/.attractr/cache/thumbs` bounded.
-* The **Search** panel could get a "polynomial map" mode that searches the 30-coefficient
-  Sprott map space directly (the classic Chaoscope behaviour) with its own default
-  ranges, rather than requiring the Polynomial Sprott attractor to be selected first.
-* Export of the current view as **SVG polylines** (orbit trace) would give vector art for
-  plotters/laser cutters — a small addition to the orbit-trace helper.
+1. **Return maps with memory** — `section` plots the crossing point; a *return map*
+   (x_{n+1} vs x_n at successive crossings, e.g. the Lorenz map of successive z maxima)
+   needs the previous crossing value to be stored at the event. A DSL hook such as
+   `on_section: w = x` (assignments executed only when the section fires) would make
+   every textbook return map a two-line program.
+2. **Buddhabrot-style escape renderer** — a fourth kind (`kind: escape`) where each
+   trajectory starts at a random point of a region, is iterated until it escapes or hits a
+   step limit, and only escaping orbits are plotted. Shares the accumulation/develop
+   pipeline; needs its own framing (the start region) and kernel loop.
+3. **String wrapping for translations** — the `tr()` seam exists; wrapping the ~600
+   user-visible literals and adding a German/French `.ts` is mechanical work, plus a
+   per-locale overlay format for `.atr` descriptions and hints.
+4. **Resume across sizes** — a checkpoint stores buffers at output resolution; allowing a
+   resumed render to change supersampling / splat radius would need the supersampled
+   buffers (×ss² memory) to be stored.
+5. **Tiled "Finish now"** — for multi-tile GPU renders the soft stop leaves later tiles at
+   the reduced budget (documented); a fairer policy would render every remaining tile to
+   the same fraction as the one in progress, which requires knowing the time budget
+   rather than a flag.
+6. **Gallery → batch re-render** — select several gallery entries and re-render them with
+   a render preset (the batch machinery takes a folder today; a list of settings would be
+   a five-line addition).
+7. **GPU develop for Liquid / Solid** — screen-space normals and lighting as a second
+   compute pass (a 3×3 neighbourhood), leaving only equalisation and image backgrounds on
+   the CPU.
+8. **Per-parameter history persistence** — the *Recent values* list lives in the widget;
+   storing it in the project (per attractor/parameter) would make it survive sessions.

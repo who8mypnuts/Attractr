@@ -39,6 +39,14 @@ class CompiledFormula:
         return self.module.color_fn
 
     @property
+    def plot_fn(self) -> Any:
+        return self.module.plot_fn
+
+    @property
+    def section_fn(self) -> Any:
+        return self.module.section_fn
+
+    @property
     def param_names(self) -> tuple[str, ...]:
         return self.analysis.params
 

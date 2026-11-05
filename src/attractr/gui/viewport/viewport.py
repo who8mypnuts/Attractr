@@ -19,11 +19,13 @@ ROTATE_DEG_PER_PX = 0.4
 class Viewport(QWidget):
     viewResized = Signal(int, int)
     hoverInfo = Signal(str)
+    dropRequested = Signal(object)  # QMimeData dropped onto the image (handled by the main window)
 
     def __init__(self, document: Document, parent=None) -> None:
         super().__init__(parent)
         self.doc = document
         self.setMouseTracking(True)
+        self.setAcceptDrops(True)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setMinimumSize(120, 90)
         self._image: QImage | None = None
@@ -63,6 +65,20 @@ class Viewport(QWidget):
     def resizeEvent(self, e) -> None:  # noqa: N802
         super().resizeEvent(e)
         self.viewResized.emit(self.width(), self.height())
+
+    # ── drag & drop ────────────────────────────────────────────────────────────
+    def dragEnterEvent(self, e) -> None:  # noqa: N802
+        from attractr.gui.dragdrop import can_accept
+
+        if can_accept(e.mimeData()):
+            e.acceptProposedAction()
+
+    def dragMoveEvent(self, e) -> None:  # noqa: N802
+        e.acceptProposedAction()
+
+    def dropEvent(self, e) -> None:  # noqa: N802
+        self.dropRequested.emit(e.mimeData())
+        e.acceptProposedAction()
 
     # ── painting ───────────────────────────────────────────────────────────────
     def paintEvent(self, e) -> None:  # noqa: N802

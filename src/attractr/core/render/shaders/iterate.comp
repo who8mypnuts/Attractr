@@ -5,10 +5,10 @@
 // uint images (merged into float accumulators by merge.comp after every pass).
 layout(local_size_x = 128) in;
 
-layout(std430, binding = 0) buffer State  { real4 st[]; };    // x, y, z, t_step (float or double)
+layout(std430, binding = 0) buffer State  { real4 st[]; };    // x, y, z, w (float or double)
 layout(std430, binding = 1) buffer Rng    { uint rng_state[]; };
 layout(std430, binding = 2) buffer Prev   { vec4 prev[]; };   // u, v, cv, have(>0)
-layout(std430, binding = 3) buffer PrevD  { vec4 prevd[]; };  // previous step delta (curvature)
+layout(std430, binding = 3) buffer PrevD  { vec4 prevd[]; };  // previous step delta (curvature); .w = previous section value
 layout(std430, binding = 4) buffer Stats  { uint restarts; uint plotted_lo; uint plotted_hi; uint pad; };
 
 layout(r32ui, binding = 0) uniform uimage2D img_count;
@@ -19,6 +19,7 @@ layout(r32ui, binding = 3) uniform uimage2D img_cv;
 uniform int   u_steps;
 uniform int   u_substeps;
 uniform float u_dt;
+uniform float u_t0;         // iteration index at the start of this dispatch
 uniform mat3  u_R;
 uniform vec3  u_center;
 uniform float u_inv_radius;
@@ -31,7 +32,7 @@ uniform float u_kern[81];
 uniform int   u_gap_fill;
 uniform int   u_color_code;
 uniform ivec4 u_flags;      // want_depth, want_zmin, want_color, do_plot
-uniform vec3  u_ic;
+uniform vec4  u_ic;
 uniform float u_jitter;
 uniform float u_inv_n;
 uniform vec2  u_cv_range;   // lo, 1/(hi-lo) — colour value fixed-point encoding range
@@ -85,11 +86,11 @@ float splat(float u, float v, float w, float depth, float cv) {
     return landed;
 }
 
-float color_value(float qx, float qy, float qz, float speed, float radius, float curv, float idx, real x, real y, real z) {
+float color_value(float qx, float qy, float qz, float speed, float radius, float curv, float idx, real x, real y, real z, real w) {
     switch (u_color_code) {
         case 1: return qx;  case 2: return qy;  case 3: return qz;  case 4: return qz;
         case 5: return speed; case 6: return radius; case 7: return idx; case 8: return curv;
-        case 9: return float(color_fn(x, y, z));
+        case 9: return float(color_fn(x, y, z, w));
     }
     return 0.0;
 }
@@ -98,7 +99,8 @@ void main() {
     uint i = gl_GlobalInvocationID.x;
     if (i >= st.length()) return;
     real4 s = st[i];
-    real x = s.x, y = s.y, z = s.z, tstep = s.w;
+    real x = s.x, y = s.y, z = s.z, w = s.w;
+    real tstep = R(u_t0);
     real dt = R(u_dt);
     uint rng = rng_state[i];
     vec4 pv = prev[i];
@@ -108,18 +110,29 @@ void main() {
 
     for (int n = 0; n < u_steps; n++) {
         real ox = x, oy = y, oz = z;
-        for (int k = 0; k < u_substeps; k++) { step(x, y, z, rng, tstep, dt); tstep += R(1.0); }
-        if (isnan(x) || isnan(y) || isnan(z) || isinf(x) || isinf(y) || isinf(z)
-            || abs(x) > R(DIVERGE_LIMIT) || abs(y) > R(DIVERGE_LIMIT) || abs(z) > R(DIVERGE_LIMIT)) {
+        for (int k = 0; k < u_substeps; k++) { step(x, y, z, w, rng, tstep, dt); tstep += R(1.0); }
+        if (isnan(x) || isnan(y) || isnan(z) || isnan(w) || isinf(x) || isinf(y) || isinf(z) || isinf(w)
+            || abs(x) > R(DIVERGE_LIMIT) || abs(y) > R(DIVERGE_LIMIT) || abs(z) > R(DIVERGE_LIMIT) || abs(w) > R(DIVERGE_LIMIT)) {
             x = R(u_ic.x) + (_rand(rng) - R(0.5)) * R(u_jitter);
             y = R(u_ic.y) + (_rand(rng) - R(0.5)) * R(u_jitter);
             z = R(u_ic.z) + (_rand(rng) - R(0.5)) * R(u_jitter);
+            w = R(u_ic.w);
             atomicAdd(restarts, 1u);
             pv.w = 0.0;
             continue;
         }
         if (u_flags.w == 0) continue;
-        vec3 q = u_R * vec3((real3(x, y, z) - real3(u_center)) * R(u_inv_radius));
+#if HAS_SECTION
+        float sv = float(section_fn(x, y, z, w));
+        bool crossed = sv * pd.w < 0.0;
+        pd.w = sv;
+        if (!crossed) continue;
+#endif
+        real fx = x, fy = y, fz = z;
+#if HAS_PLOT
+        plot_fn(x, y, z, w, fx, fy, fz);
+#endif
+        vec3 q = u_R * vec3((real3(fx, fy, fz) - real3(u_center)) * R(u_inv_radius));
         float d = max(1.0 + u_persp * q.z, 0.05);
         float u = u_c.x + u_focal * q.x / d;
         float v = u_c.y - u_focal * q.y / d;
@@ -134,7 +147,7 @@ void main() {
                 if (la > 1e-12 && lb > 1e-12) curv = 0.5 * (1.0 - clamp(dot(dd, pd.xyz) / (la * lb), -1.0, 1.0));
                 pd.xyz = dd;
             }
-            cv = color_value(q.x, q.y, q.z, speed, length(q), curv, float(i) * u_inv_n, x, y, z);
+            cv = color_value(q.x, q.y, q.z, speed, length(q), curv, float(i) * u_inv_n, x, y, z, w);
         }
         int nseg = 1;
         if (u_gap_fill != 0 && pv.w > 0.0) {
@@ -151,7 +164,7 @@ void main() {
         }
         pv = vec4(u, v, cv, 1.0);
     }
-    st[i] = real4(x, y, z, tstep);
+    st[i] = real4(x, y, z, w);
     rng_state[i] = rng;
     prev[i] = pv;
     prevd[i] = pd;

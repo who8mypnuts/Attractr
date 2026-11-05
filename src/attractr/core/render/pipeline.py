@@ -11,6 +11,7 @@ from attractr.core.color.palettes import palettes
 from attractr.core.jobs.cancel import NEVER, Cancelled, CancelToken
 from attractr.core.jobs.progress import ProgressTracker
 from attractr.core.render.camera import Camera
+from attractr.core.render.checkpoint import Checkpoint
 from attractr.core.render.develop.developer import Developed, develop
 from attractr.core.render.engines import selector
 from attractr.core.render.engines.base import Engine, PassSink
@@ -53,7 +54,10 @@ def accumulate(
     cancel: CancelToken = NEVER,
     tracker: ProgressTracker | None = None,
     sink: PassSink | None = None,
+    resume: Checkpoint | None = None,
 ) -> RenderResult:
+    """``resume``: continue from a saved checkpoint (see :mod:`attractr.core.render.checkpoint`);
+    ``cancel.finish()`` stops accumulation early but still returns a complete result."""
     spec = resolve_spec(settings)
     if isinstance(engine, str):
         eng = selector.select(engine, purpose)
@@ -62,17 +66,17 @@ def accumulate(
     else:
         eng = engine
     try:
-        return eng.accumulate(settings, spec, sink=sink, cancel=cancel, tracker=tracker)
+        return eng.accumulate(settings, spec, sink=sink, cancel=cancel, tracker=tracker, resume=resume)
     except Cancelled:
         raise
     except Exception as exc:  # noqa: BLE001 — a GPU failure must never lose the render
-        if eng.id == "cpu":
+        if eng.id == "cpu" or (resume is not None and not resume.uniform):
             raise
         log.warning("engine %s failed (%s); restarting on the CPU engine", eng.id, exc)
         if tracker is not None:
             tracker.update(0.0, f"{eng.id} failed — falling back to CPU", force=True)
         cpu = selector.get_engine("cpu")
-        result = cpu.accumulate(settings, spec, sink=sink, cancel=cancel, tracker=tracker)
+        result = cpu.accumulate(settings, spec, sink=sink, cancel=cancel, tracker=tracker, resume=resume)
         result.stats.notes.append(f"GPU engine {eng.id} failed ({type(exc).__name__}: {exc}); rendered on CPU instead.")
         return result
 

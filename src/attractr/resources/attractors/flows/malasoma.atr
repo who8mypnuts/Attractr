@@ -1,0 +1,15 @@
+name: Malasoma jerk
+family: Flows
+desc: Malasoma's jerk equation x''' = −a·x'' + x·x' − x — the simplest chaotic jerk with a bilinear term, equivariant under x → −x.
+ref: J.-M. Malasoma, "What is the simplest dissipative chaotic jerk equation which is parity invariant?", Phys. Lett. A 264 (2000)
+tags: flow, jerk, 3d
+dt: 0.02
+ic: 1 0 0
+jitter: 0.02
+camera: 25 20 0 1
+
+param a = 2.05 [1.9, 2.2] "a — damping."
+
+dx = y
+dy = z
+dz = -a*z + x*y - x

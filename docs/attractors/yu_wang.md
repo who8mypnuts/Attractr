@@ -23,7 +23,7 @@ dz/dt = exp(x · y) − d · z
 | c | 2 | [1, 3] |  |
 | d | 2.5 | [1.5, 3.5] |  |
 
-Integration: RK4, default dt = 0.002, initial condition (0.1, 0.1, 20.0).
+Integration: RK4, default dt = 0.002, initial condition (0.1, 0.1, 20.0, 0.0).
 
 ## References
 

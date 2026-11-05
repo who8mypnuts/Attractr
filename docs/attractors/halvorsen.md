@@ -20,7 +20,7 @@ dz/dt = −a · z − 4 · x − 4 · y − x²
 |---|---|---|---|
 | a | 1.4 | [1, 2.5] | Damping — lower values loosen the loops; near 1.4 the orbit barely stays bound (1.89 is the Chaoscope preset). |
 
-Integration: RK4, default dt = 0.005, initial condition (-5.0, 0.0, 0.0).
+Integration: RK4, default dt = 0.005, initial condition (-5.0, 0.0, 0.0, 0.0).
 
 ## References
 

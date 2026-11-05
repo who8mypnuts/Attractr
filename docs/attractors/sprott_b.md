@@ -21,7 +21,7 @@ dz/dt = 1 − b · x · y
 | a | 1 | [0.5, 2] | Coupling — scales the y·z drive that feeds the swirl. |
 | b | 1 | [0.5, 2] | Damping of the z growth. |
 
-Integration: RK4, default dt = 0.02, initial condition (0.1, 0.1, 0.1).
+Integration: RK4, default dt = 0.02, initial condition (0.1, 0.1, 0.1, 0.0).
 
 ## References
 

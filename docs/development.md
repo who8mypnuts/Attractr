@@ -87,3 +87,15 @@ binary). The bundle contains no pre-compiled numba kernels — they are compiled
 The GUI starts `python -m attractr.core.worker_server` (thumbnails, formula probes, daily
 attractor) and, on first run, `python -m attractr.core.warmup` (kernel pre-compilation).
 Both are ordinary subprocesses of the same interpreter; they inherit `ATTRACTR_HOME`.
+
+
+## Internationalisation
+
+Scaffolding only: `attractr/i18n.py` provides `tr()` (Qt `translate` in the `attractr`
+context, safe without a QApplication) and `install_translators()` (loads
+`resources/i18n/attractr_<locale>.qm` + Qt's `qtbase_<locale>.qm` for the system locale
+or `ATTRACTR_LANG`). Strings are **not yet wrapped** — when a translation is wanted, wrap
+the user-visible literals of a panel in `tr("…")`, run `pyside6-lupdate`, translate, and
+`pyside6-lrelease` (see `resources/i18n/README.md`). Attractor descriptions and parameter
+hints live in the `.atr` files and would need a parallel mechanism (per-locale `.atr`
+overlays) — deliberately left for later.

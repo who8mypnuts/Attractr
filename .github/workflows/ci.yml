@@ -1,0 +1,23 @@
+name: CI
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "${{ matrix.python }}" }
+      - name: System libraries (Mesa software GL, Qt platform deps, ffmpeg)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgl1-mesa-dri libegl1 libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1 libxcb-shape0 ffmpeg
+      - run: pip install -e ".[dev,cl-cpu]"
+      - run: ruff check src tests tools
+      - run: pytest -q
+        env:
+          QT_QPA_PLATFORM: offscreen
+          ATTRACTR_HOME: /tmp/attractr_home
+          LIBGL_ALWAYS_SOFTWARE: "1"

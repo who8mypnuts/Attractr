@@ -25,7 +25,8 @@
 | [gradients.md](gradients.md) | gradient model and editor |
 | [animation.md](animation.md) | timeline, keyframes, helpers, rendering, ffmpeg |
 | [gui_guide.md](gui_guide.md) | panels, viewport, shortcuts |
+| [checkpoints.md](checkpoints.md) | progressive renders, Finish now, checkpoint / resume |
 | [changelog.md](changelog.md) | release notes |
-| [suggested-improvements.md](suggested-improvements.md) | candidate attractors and improvements (not implemented) |
+| [suggested-improvements.md](suggested-improvements.md) | status of the post-plan improvement round; what was dropped; what could come next |
 | [attractors/](attractors/README.md) | generated page per attractor |
 | `images/contact_sheet.png` | every built-in attractor at default settings |

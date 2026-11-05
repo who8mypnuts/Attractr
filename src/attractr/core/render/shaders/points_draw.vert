@@ -23,13 +23,23 @@ out float v_w;
 //__PRELUDE__
 //__STEP__
 
-float color_value(float qx, float qy, float qz, float speed, float radius, float idx, float x, float y, float z) {
+float color_value(float qx, float qy, float qz, float speed, float radius, float idx, vec4 s) {
     switch (u_color_code) {
         case 1: return qx;  case 2: return qy;  case 3: return qz;  case 4: return qz;
         case 5: return speed; case 6: return radius; case 7: return idx; case 8: return 0.5;
-        case 9: return color_fn(x, y, z);
+        case 9: return color_fn(s.x, s.y, s.z, s.w);
     }
     return 0.0;
+}
+
+vec3 plotted(vec4 s) {
+#if HAS_PLOT
+    real px, py, pz;
+    plot_fn(s.x, s.y, s.z, s.w, px, py, pz);
+    return vec3(px, py, pz);
+#else
+    return s.xyz;
+#endif
 }
 
 void main() {
@@ -37,15 +47,24 @@ void main() {
     ivec2 tc = ivec2(id % u_tex_w, id / u_tex_w);
     vec4 s = texelFetch(u_state, tc, 0);
     vec4 o = texelFetch(u_old, tc, 0);
-    vec3 p = (u_line != 0 && (gl_VertexID & 1) == 0) ? o.xyz : s.xyz;
+    bool restarted = o.x > 1e29;
+#if HAS_SECTION
+    if (restarted || section_fn(o.x, o.y, o.z, o.w) * section_fn(s.x, s.y, s.z, s.w) >= 0.0) {
+        gl_Position = vec4(-10.0, -10.0, 0.0, 1.0);   // no section crossing this step
+        return;
+    }
+#endif
+    vec3 ps = plotted(s);
+    vec3 po = restarted ? ps : plotted(o);
+    vec3 p = (u_line != 0 && (gl_VertexID & 1) == 0) ? po : ps;
     vec3 q = u_R * ((p - u_center) * u_inv_radius);
     float d = max(1.0 + u_persp * q.z, 0.05);
     float u = u_c.x + u_focal * q.x / d;
     float v = u_c.y - u_focal * q.y / d;
-    vec3 qs = u_R * ((s.xyz - u_center) * u_inv_radius);
-    vec3 qo = u_R * ((o.xyz - u_center) * u_inv_radius);
+    vec3 qs = u_R * ((ps - u_center) * u_inv_radius);
+    vec3 qo = u_R * ((po - u_center) * u_inv_radius);
     float speed = length(s.xyz - o.xyz) * u_inv_radius;
-    v_cv = color_value(qs.x, qs.y, qs.z, speed, length(qs), float(id) * u_inv_n, s.x, s.y, s.z);
+    v_cv = color_value(qs.x, qs.y, qs.z, speed, length(qs), float(id) * u_inv_n, s);
     v_depth = q.z;
     v_w = 1.0;
     if (u_line != 0) {
@@ -56,8 +75,8 @@ void main() {
         vec2 us = vec2(u_c.x + u_focal * qs.x / ds, u_c.y - u_focal * qs.y / ds);
         float len = distance(uo, us);
         v_w = 1.0 / max(len, 1.0);
-        if (len > u_size.x + u_size.y || o.w > 0.5) { gl_Position = vec4(-10.0, -10.0, 0.0, 1.0); return; }
-    } else if (o.w > 0.5) {
+        if (len > u_size.x + u_size.y || restarted) { gl_Position = vec4(-10.0, -10.0, 0.0, 1.0); return; }
+    } else if (restarted) {
         gl_Position = vec4(-10.0, -10.0, 0.0, 1.0);   // just restarted: do not plot
         return;
     }

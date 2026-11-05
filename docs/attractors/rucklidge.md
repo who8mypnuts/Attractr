@@ -21,7 +21,7 @@ dz/dt = −z + y²
 | kappa | 2 | [0.5, 4] | κ — damping of the velocity mode. |
 | lam | 6.7 | [3, 10] | λ — forcing. |
 
-Integration: RK4, default dt = 0.01, initial condition (1.0, 0.0, 4.5).
+Integration: RK4, default dt = 0.01, initial condition (1.0, 0.0, 4.5, 0.0).
 
 ## References
 

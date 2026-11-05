@@ -12,7 +12,9 @@ from attractr.core.formula.ast import (
     Choose,
     Compare,
     Expr,
+    Num,
     Program,
+    Tuple,
     Var,
     all_assigns,
     walk,
@@ -24,13 +26,16 @@ from attractr.core.formula.lexer import FormulaError
 @dataclass
 class Analysis:
     kind: str  # map | flow | ifs
-    dims: int  # 2 or 3
+    dims: int  # 2 or 3 (plotted dimensions)
     params: tuple[str, ...]
     temps: tuple[str, ...]
     uses_rand: bool
     has_depth: bool
     has_color: bool
     uses_z: bool
+    uses_w: bool = False  # 4th state variable in use (w' / dw / w)
+    has_plot: bool = False  # plot = ex, ey, ez  (what is drawn instead of x, y, z)
+    has_section: bool = False  # section = expr (Poincaré section: plot on sign change)
     warnings: list[str] = field(default_factory=list)
 
 
@@ -41,7 +46,7 @@ def validate(prog: Program) -> Analysis:
     kind = _infer_kind(prog)
     temps: list[str] = []
     uses_rand = False
-    has_depth = has_color = False
+    has_depth = has_color = has_plot = has_section = False
 
     for stmt in prog.body:
         if isinstance(stmt, Choose):
@@ -62,10 +67,16 @@ def validate(prog: Program) -> Analysis:
         a = stmt
         known = set(params) | set(temps)
         uses_rand |= _check_expr(a.expr, known, a.line)
+        if isinstance(a.expr, Tuple) and a.target != "plot":
+            raise FormulaError("an expression list is only allowed after plot =", a.line)
         if a.target == "depth":
             has_depth = True
         elif a.target == "color":
             has_color = True
+        elif a.target == "plot":
+            has_plot = True
+        elif a.target == "section":
+            has_section = True
         elif a.is_temp:
             if a.target in params:
                 raise FormulaError(f"cannot assign to parameter {a.target!r}", a.line)
@@ -78,9 +89,15 @@ def validate(prog: Program) -> Analysis:
             temps.append(a.target)
 
     _check_required_targets(prog, kind)
-    dims = _infer_dims(prog, kind, has_depth)
+    if has_depth and has_plot:
+        raise FormulaError("use either depth = … or plot = …, not both")
+    dims = _infer_dims(prog, kind, has_depth or has_plot)
+    targets = {a.target for a in all_assigns(prog.body)}
+    uses_w = ("w'" in targets or "dw" in targets
+              or any(isinstance(v, Var) and v.name == "w" for a in all_assigns(prog.body) for v in walk(a.expr)))
     uses_z = dims == 3
-    analysis = Analysis(kind, dims, tuple(params), tuple(dict.fromkeys(temps)), uses_rand, has_depth, has_color, uses_z)
+    analysis = Analysis(kind, dims, tuple(params), tuple(dict.fromkeys(temps)), uses_rand, has_depth, has_color, uses_z,
+                        uses_w, has_plot, has_section)
     used = {v.name for a in all_assigns(prog.body) for v in walk(a.expr) if isinstance(v, Var)}
     for p in params:
         if p not in used:
@@ -142,6 +159,10 @@ def _infer_dims(prog: Program, kind: str, has_depth: bool) -> int:
             raise FormulaError("dims must be 2 or 3")
         return int(d)
     targets = {a.target for a in all_assigns(prog.body)}
+    plot = next((a for a in all_assigns(prog.body) if a.target == "plot"), None)
+    if plot is not None and isinstance(plot.expr, Tuple):
+        third = plot.expr.items[2]
+        return 2 if isinstance(third, Num) and third.value == 0.0 else 3
     zt = "dz" if kind == "flow" else "z'"
     if zt in targets or has_depth:
         return 3

@@ -1,0 +1,19 @@
+name: Rössler hyperchaos
+family: Flows
+desc: The first hyperchaotic system (1979): a four-dimensional flow with *two* positive Lyapunov exponents. The 4th variable w lives in the kernel's hidden state; the picture is the (x, y, z) projection.
+ref: O. E. Rössler, "An equation for hyperchaos", Phys. Lett. A 71 (1979)
+tags: flow, 4d, hyperchaos
+dt: 0.005
+ic: -10 -6 0 10
+camera: 25 20 0 1
+warmup: 3000
+
+param a = 0.25 [0, 0.5]
+param b = 3 [0, 5]
+param c = 0.5 [0, 1]
+param d = 0.05 [0, 0.2]
+
+dx = -y - z
+dy = x + a*y + w
+dz = b + x*z
+dw = -c*z + d*w

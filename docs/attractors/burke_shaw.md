@@ -21,7 +21,7 @@ dz/dt = s · x · y + v
 | s | 10 | [5, 15] | Coupling strength — drives the swirl rate. Higher winds the spiral tighter. |
 | v | 4.272 | [2, 7] | Lift — constant push on z. |
 
-Integration: RK4, default dt = 0.005, initial condition (0.6, 0.5, 0.5).
+Integration: RK4, default dt = 0.005, initial condition (0.6, 0.5, 0.5, 0.0).
 
 ## References
 

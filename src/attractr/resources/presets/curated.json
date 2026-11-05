@@ -308,7 +308,7 @@
    "source": "chaoscope_original"
   },
   {
-   "name": "M\u00f6bius",
+   "name": "Möbius",
    "attractor": "aizawa",
    "params": {
     "a": 0.95,
@@ -1004,6 +1004,376 @@
    "palette": "duotone",
    "style": "gas",
    "source": "strange-attractors-webgl"
+  },
+  {
+   "name": "Hadley spring",
+   "attractor": "lorenz84",
+   "params": {
+    "a": 0.25,
+    "b": 4.0,
+    "F": 8.0,
+    "G": 1.25
+   },
+   "camera": {
+    "yaw": 30,
+    "pitch": 25,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "electric",
+   "style": "gas",
+   "source": "lorenz_1984"
+  },
+  {
+   "name": "Emperor's cloak",
+   "attractor": "symmetric_icon_ext",
+   "params": {
+    "lam": -1.806,
+    "al": 1.806,
+    "be": 0,
+    "ga": 1,
+    "de": 0,
+    "om": 0,
+    "n": 5,
+    "p": 1
+   },
+   "camera": {
+    "yaw": 0,
+    "pitch": 0,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "aurora",
+   "style": "gas",
+   "source": "symmetry_in_chaos"
+  },
+  {
+   "name": "Sanddollar",
+   "attractor": "symmetric_icon_ext",
+   "params": {
+    "lam": -2.34,
+    "al": 2,
+    "be": 0.2,
+    "ga": 0.1,
+    "de": 0,
+    "om": 0,
+    "n": 5,
+    "p": 1
+   },
+   "camera": {
+    "yaw": 0,
+    "pitch": 0,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "fire",
+   "style": "gas",
+   "source": "symmetry_in_chaos"
+  },
+  {
+   "name": "Kachina dolls",
+   "attractor": "symmetric_icon_ext",
+   "params": {
+    "lam": -2.7,
+    "al": 5,
+    "be": 1.5,
+    "ga": 1,
+    "de": 0,
+    "om": 0,
+    "n": 6,
+    "p": 1
+   },
+   "camera": {
+    "yaw": 0,
+    "pitch": 0,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "ice",
+   "style": "gas",
+   "source": "symmetry_in_chaos"
+  },
+  {
+   "name": "Mayan bracelet",
+   "attractor": "symmetric_icon_ext",
+   "params": {
+    "lam": -2.08,
+    "al": 1,
+    "be": -0.1,
+    "ga": 0.167,
+    "de": 0,
+    "om": 0,
+    "n": 7,
+    "p": 1
+   },
+   "camera": {
+    "yaw": 0,
+    "pitch": 0,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "nebula",
+   "style": "gas",
+   "source": "symmetry_in_chaos"
+  },
+  {
+   "name": "Pentagle pinwheel",
+   "attractor": "symmetric_icon_ext",
+   "params": {
+    "lam": -2.5,
+    "al": 5,
+    "be": -1.9,
+    "ga": 1,
+    "de": 0,
+    "om": 0.188,
+    "n": 5,
+    "p": 1
+   },
+   "camera": {
+    "yaw": 0,
+    "pitch": 0,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "electric",
+   "style": "gas",
+   "source": "symmetry_in_chaos"
+  },
+  {
+   "name": "Swirling streamers",
+   "attractor": "symmetric_icon_ext",
+   "params": {
+    "lam": -1.86,
+    "al": 2,
+    "be": 0,
+    "ga": 1,
+    "de": 0,
+    "om": 0.1,
+    "n": 4,
+    "p": 1
+   },
+   "camera": {
+    "yaw": 0,
+    "pitch": 0,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "aurora",
+   "style": "gas",
+   "source": "symmetry_in_chaos"
+  },
+  {
+   "name": "French glass",
+   "attractor": "symmetric_icon_ext",
+   "params": {
+    "lam": -2.05,
+    "al": 3,
+    "be": -16.79,
+    "ga": 1,
+    "de": 0,
+    "om": 0,
+    "n": 9,
+    "p": 1
+   },
+   "camera": {
+    "yaw": 0,
+    "pitch": 0,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "ice",
+   "style": "gas",
+   "source": "symmetry_in_chaos"
+  },
+  {
+   "name": "Trampoline",
+   "attractor": "symmetric_icon_ext",
+   "params": {
+    "lam": 1.56,
+    "al": -1,
+    "be": 0.1,
+    "ga": -0.82,
+    "de": 0,
+    "om": 0.12,
+    "n": 3,
+    "p": 1
+   },
+   "camera": {
+    "yaw": 0,
+    "pitch": 0,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "fire",
+   "style": "gas",
+   "source": "symmetry_in_chaos"
+  },
+  {
+   "name": "Koch curve",
+   "attractor": "de_rham",
+   "params": {
+    "ar": 0.5,
+    "ai": 0.2887,
+    "conj": 1
+   },
+   "camera": {
+    "yaw": 0,
+    "pitch": 0,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "ice",
+   "style": "gas",
+   "source": "de_rham"
+  },
+  {
+   "name": "Peano curve",
+   "attractor": "de_rham",
+   "params": {
+    "ar": 0.5,
+    "ai": 0.5,
+    "conj": 1
+   },
+   "camera": {
+    "yaw": 0,
+    "pitch": 0,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "ice",
+   "style": "gas",
+   "source": "de_rham"
+  },
+  {
+   "name": "Lévy C (Cesàro form)",
+   "attractor": "de_rham",
+   "params": {
+    "ar": 0.5,
+    "ai": 0.5,
+    "conj": 0
+   },
+   "camera": {
+    "yaw": 0,
+    "pitch": 0,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "ice",
+   "style": "gas",
+   "source": "de_rham"
+  },
+  {
+   "name": "Cesàro curve",
+   "attractor": "de_rham",
+   "params": {
+    "ar": 0.5,
+    "ai": 0.3,
+    "conj": 0
+   },
+   "camera": {
+    "yaw": 0,
+    "pitch": 0,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "ice",
+   "style": "gas",
+   "source": "de_rham"
+  },
+  {
+   "name": "Pentagon, no repeats",
+   "attractor": "chaos_game_ngon",
+   "params": {
+    "n": 5,
+    "s": 0.5,
+    "avoid": 1,
+    "twist": 0
+   },
+   "camera": {
+    "yaw": 0,
+    "pitch": 0,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "nebula",
+   "style": "gas",
+   "source": "chaos_game"
+  },
+  {
+   "name": "Hexagon, skip neighbour",
+   "attractor": "chaos_game_ngon",
+   "params": {
+    "n": 6,
+    "s": 0.5,
+    "avoid": 2,
+    "twist": 0
+   },
+   "camera": {
+    "yaw": 0,
+    "pitch": 0,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "nebula",
+   "style": "gas",
+   "source": "chaos_game"
+  },
+  {
+   "name": "Square, skip neighbour",
+   "attractor": "chaos_game_ngon",
+   "params": {
+    "n": 4,
+    "s": 0.5,
+    "avoid": 2,
+    "twist": 0
+   },
+   "camera": {
+    "yaw": 0,
+    "pitch": 0,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "nebula",
+   "style": "gas",
+   "source": "chaos_game"
+  },
+  {
+   "name": "Sierpinski triangle",
+   "attractor": "chaos_game_ngon",
+   "params": {
+    "n": 3,
+    "s": 0.5,
+    "avoid": 0,
+    "twist": 0
+   },
+   "camera": {
+    "yaw": 0,
+    "pitch": 0,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "nebula",
+   "style": "gas",
+   "source": "chaos_game"
+  },
+  {
+   "name": "Spiral octagon",
+   "attractor": "chaos_game_ngon",
+   "params": {
+    "n": 8,
+    "s": 0.6,
+    "avoid": 1,
+    "twist": 20
+   },
+   "camera": {
+    "yaw": 0,
+    "pitch": 0,
+    "roll": 0,
+    "zoom": 1.0
+   },
+   "palette": "aurora",
+   "style": "gas",
+   "source": "chaos_game"
   }
  ]
 }

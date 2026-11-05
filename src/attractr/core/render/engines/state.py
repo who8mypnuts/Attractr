@@ -22,6 +22,15 @@ class TrajectoryState:
     DXp: np.ndarray  # previous step deltas (curvature)
     DYp: np.ndarray
     DZp: np.ndarray
+    W: np.ndarray | None = None  # 4th state variable (starts at 0)
+    SEC: np.ndarray | None = None  # previous Poincaré-section value
+
+    def __post_init__(self) -> None:
+        n = self.X.shape[0]
+        if self.W is None:
+            self.W = np.zeros(n, dtype=np.float64)
+        if self.SEC is None:
+            self.SEC = np.zeros(n, dtype=np.float64)
 
     @property
     def n(self) -> int:
@@ -31,7 +40,7 @@ class TrajectoryState:
         self.HAVE[:] = 0
 
 
-def seed_trajectories(n: int, seed: int, ic: tuple[float, float, float], jitter: float) -> TrajectoryState:
+def seed_trajectories(n: int, seed: int, ic: tuple[float, ...], jitter: float) -> TrajectoryState:
     """Deterministic initial conditions: ``ic + (rand − 0.5)·jitter`` per trajectory."""
     rs = trajectory_seeds(seed, n)
     r = xorshift32_floats(rs, 3)  # advances rs in place — same as the kernels' _reseed
@@ -39,19 +48,23 @@ def seed_trajectories(n: int, seed: int, ic: tuple[float, float, float], jitter:
     Y = ic[1] + (r[1] - 0.5) * jitter
     Z = ic[2] + (r[2] - 0.5) * jitter
     zeros = np.zeros(n, dtype=np.float64)
+    w0 = float(ic[3]) if len(ic) > 3 else 0.0
     return TrajectoryState(
         X.astype(np.float64), Y.astype(np.float64), Z.astype(np.float64), rs,
         zeros.copy(), zeros.copy(), zeros.copy(), np.zeros(n, dtype=np.uint8),
         zeros.copy(), zeros.copy(), zeros.copy(),
+        W=np.full(n, w0, dtype=np.float64),
     )
 
 
 def seed_from_points(n: int, seed: int, pts: np.ndarray, jitter: float) -> TrajectoryState:
-    """Initial conditions drawn (deterministically) from points already on the attractor,
-    so accumulation needs only a short decorrelation warm-up."""
-    good = pts[np.all(np.isfinite(pts), axis=1)]
+    """Initial conditions drawn (deterministically) from *states* already on the attractor
+    (``pts`` is the framing sample: columns 0..3 = x, y, z, w), so accumulation needs only a
+    short decorrelation warm-up."""
+    st = pts[:, :4] if pts.shape[1] >= 4 else np.concatenate([pts[:, :3], np.zeros((pts.shape[0], 1))], axis=1)
+    good = st[np.all(np.isfinite(st), axis=1)]
     if good.shape[0] == 0:
-        return seed_trajectories(n, seed, (0.0, 0.0, 0.0), jitter)
+        return seed_trajectories(n, seed, (0.0, 0.0, 0.0, 0.0), jitter)
     rs = trajectory_seeds(seed, n)
     r = xorshift32_floats(rs, 4)
     idx = np.minimum((r[0] * good.shape[0]).astype(np.int64), good.shape[0] - 1)
@@ -63,5 +76,5 @@ def seed_from_points(n: int, seed: int, pts: np.ndarray, jitter: float) -> Traje
     return TrajectoryState(
         X.astype(np.float64), Y.astype(np.float64), Z.astype(np.float64), rs,
         zeros.copy(), zeros.copy(), zeros.copy(), np.zeros(n, dtype=np.uint8),
-        zeros.copy(), zeros.copy(), zeros.copy(),
+        zeros.copy(), zeros.copy(), zeros.copy(), W=base[:, 3].astype(np.float64).copy(),
     )

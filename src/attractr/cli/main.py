@@ -15,13 +15,15 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("-v", "--verbose", action="store_true", help="debug logging")
     sub = ap.add_subparsers(dest="command")
 
-    from attractr.cli import cmd_animate, cmd_info, cmd_list, cmd_render, cmd_report
+    from attractr.cli import cmd_animate, cmd_batch, cmd_info, cmd_list, cmd_render, cmd_report, cmd_svg
 
     cmd_render.add_parser(sub)
     cmd_list.add_parser(sub)
     cmd_info.add_parser(sub)
     cmd_report.add_parser(sub)
     cmd_animate.add_parser(sub)
+    cmd_batch.add_parser(sub)
+    cmd_svg.add_parser(sub)
     wp = sub.add_parser("warmup", help="pre-compile numba kernels for all built-in attractors")
     wp.add_argument("--full", action="store_true", help="also compile the CPU accumulation kernels")
     wp.add_argument("--quiet", action="store_true")

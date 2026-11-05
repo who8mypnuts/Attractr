@@ -13,6 +13,7 @@ argument named ``p`` in OpenCL).  The runtime helpers (``_rand``, ``_mod`` …) 
 from __future__ import annotations
 
 from attractr.core.formula.ast import (
+    SPECIAL_TARGETS,
     Assign,
     BinOp,
     BoolOp,
@@ -22,6 +23,7 @@ from attractr.core.formula.ast import (
     Expr,
     Num,
     Program,
+    Tuple,
     Unary,
     Var,
 )
@@ -45,7 +47,7 @@ class GlslEmitter:
     def __init__(self, params: tuple[str, ...], dialect: str = "glsl", state: dict[str, str] | None = None) -> None:
         self.params = {n: i for i, n in enumerate(params)}
         self.dialect = dialect
-        self.state = state or {"x": "x", "y": "y", "z": "z"}
+        self.state = state or {"x": "x", "y": "y", "z": "z", "w": "w"}
         self.pname = "u_p" if dialect == "glsl" else "p"
         self.declared: set[str] = set()
 
@@ -60,7 +62,7 @@ class GlslEmitter:
     def name(self, n: str) -> str:
         if n in self.state:
             return self.state[n]
-        if n in ("x'", "y'", "z'"):
+        if n in ("x'", "y'", "z'", "w'"):
             return "_n" + n[0]
         if n in self.params:
             return f"R({self.pname}[{self.params[n]}])"
@@ -96,6 +98,8 @@ class GlslEmitter:
             return f"({self.expr(e.left)} {op} {self.expr(e.right)})"
         if isinstance(e, Call):
             return self.call(e)
+        if isinstance(e, Tuple):
+            return ", ".join(self.expr(a) for a in e.items)
         raise TypeError(type(e))
 
     def call(self, c: Call) -> str:
@@ -116,7 +120,7 @@ class GlslEmitter:
 def _block(stmts: tuple[Assign, ...], em: GlslEmitter, indent: str) -> list[str]:
     out = []
     for a in stmts:
-        if a.target in ("depth", "color"):
+        if a.target in SPECIAL_TARGETS:
             continue
         if a.is_temp:
             out.append(f"{indent}{em.declare(a.target)} = {em.expr(a.expr)};")
@@ -148,29 +152,32 @@ def generate_step(prog: Program, an: Analysis, integrator: str, dialect: str = "
     ptr = "" if dialect == "glsl" else "__constant float* p, "
     lines: list[str] = []
     if an.kind == "flow":
-        sig = f"void deriv({ptr}real x, real y, real z, {inout}uint{'*' if dialect != 'glsl' else ''} rng, real t_step, {'out ' if dialect == 'glsl' else ''}real{'*' if dialect != 'glsl' else ''} _dx, {'out ' if dialect == 'glsl' else ''}real{'*' if dialect != 'glsl' else ''} _dy, {'out ' if dialect == 'glsl' else ''}real{'*' if dialect != 'glsl' else ''} _dz)"
+        o = "out " if dialect == "glsl" else ""
+        ptrs = "" if dialect == "glsl" else "*"
+        sig = (f"void deriv({ptr}real x, real y, real z, real w, {inout}uint{ptrs} rng, real t_step, "
+               f"{o}real{ptrs} _dx, {o}real{ptrs} _dy, {o}real{ptrs} _dz, {o}real{ptrs} _dw)")
         lines.append(sig + " {")
         if dialect == "glsl":
-            lines.append("    _dx = R(0.0); _dy = R(0.0); _dz = R(0.0);")
+            lines.append("    _dx = R(0.0); _dy = R(0.0); _dz = R(0.0); _dw = R(0.0);")
             for s in prog.body:
                 assert isinstance(s, Assign)
-                if s.target in ("depth", "color"):
+                if s.target in SPECIAL_TARGETS:
                     continue
                 if s.is_deriv:
                     lines.append(f"    _{s.target} = {em.expr(s.expr)};")
                 else:
                     lines.append(f"    {em.declare(s.target)} = {em.expr(s.expr)};")
         else:
-            lines.append("    real dx_ = R(0.0), dy_ = R(0.0), dz_ = R(0.0);")
+            lines.append("    real dx_ = R(0.0), dy_ = R(0.0), dz_ = R(0.0), dw_ = R(0.0);")
             for s in prog.body:
                 assert isinstance(s, Assign)
-                if s.target in ("depth", "color"):
+                if s.target in SPECIAL_TARGETS:
                     continue
                 if s.is_deriv:
                     lines.append(f"    {s.target}_ = {em.expr(s.expr)};")
                 else:
                     lines.append(f"    {em.declare(s.target)} = {em.expr(s.expr)};")
-            lines.append("    *_dx = dx_; *_dy = dy_; *_dz = dz_;")
+            lines.append("    *_dx = dx_; *_dy = dy_; *_dz = dz_; *_dw = dw_;")
         lines.append("}")
         lines.append("")
         lines.append(_flow_step(integrator, dialect))
@@ -178,11 +185,11 @@ def generate_step(prog: Program, an: Analysis, integrator: str, dialect: str = "
 
     # map / ifs
     if dialect == "glsl":
-        lines.append("void step(inout real x, inout real y, inout real z, inout uint rng, real t_step, real dt) {")
+        lines.append("void step(inout real x, inout real y, inout real z, inout real w, inout uint rng, real t_step, real dt) {")
     else:
-        lines.append("void step(__constant float* p, real* xp, real* yp, real* zp, uint* rng, real t_step, real dt) {")
-        lines.append("    real x = *xp, y = *yp, z = *zp;")
-    lines.append("    real _nx = x, _ny = y, _nz = z;")
+        lines.append("void step(__constant float* p, real* xp, real* yp, real* zp, real* wp, uint* rng, real t_step, real dt) {")
+        lines.append("    real x = *xp, y = *yp, z = *zp, w = *wp;")
+    lines.append("    real _nx = x, _ny = y, _nz = z, _nw = w;")
     for stmt in prog.body:
         if isinstance(stmt, Choose):
             total = sum(b.prob for b in stmt.branches)
@@ -204,74 +211,103 @@ def generate_step(prog: Program, an: Analysis, integrator: str, dialect: str = "
             lines.extend(_block((stmt,), em, "    "))
     depth = _special(prog, "depth")
     if depth is not None:
-        em_new = GlslEmitter(an.params, dialect, {"x": "_nx", "y": "_ny", "z": "_nz"})
+        em_new = GlslEmitter(an.params, dialect, {"x": "_nx", "y": "_ny", "z": "_nz", "w": "_nw"})
         lines.append(f"    _nz = {em_new.expr(depth.expr)};")
     if dialect == "glsl":
-        lines.append("    x = _nx; y = _ny; z = _nz;")
+        lines.append("    x = _nx; y = _ny; z = _nz; w = _nw;")
     else:
-        lines.append("    *xp = _nx; *yp = _ny; *zp = _nz;")
+        lines.append("    *xp = _nx; *yp = _ny; *zp = _nz; *wp = _nw;")
     lines.append("}")
     return "\n".join(lines)
 
 
 def _flow_step(integrator: str, dialect: str) -> str:
     if dialect == "glsl":
-        head = "void step(inout real x, inout real y, inout real z, inout uint rng, real t_step, real dt) {"
-        call = lambda args: f"deriv({args}, rng, t_step, kx, ky, kz);"  # noqa: E731
-        decl = "    real kx, ky, kz;"
+        head = "void step(inout real x, inout real y, inout real z, inout real w, inout uint rng, real t_step, real dt) {"
+        call = lambda args: f"deriv({args}, rng, t_step, kx, ky, kz, kw);"  # noqa: E731
+        decl = "    real kx, ky, kz, kw;"
         tail = ""
     else:
-        head = "void step(__constant float* p, real* xp, real* yp, real* zp, uint* rng, real t_step, real dt) {\n    real x = *xp, y = *yp, z = *zp;"
-        call = lambda args: f"deriv(p, {args}, rng, t_step, &kx, &ky, &kz);"  # noqa: E731
-        decl = "    real kx, ky, kz;"
-        tail = "    *xp = x; *yp = y; *zp = z;\n"
+        head = ("void step(__constant float* p, real* xp, real* yp, real* zp, real* wp, uint* rng, real t_step, real dt) {\n"
+                "    real x = *xp, y = *yp, z = *zp, w = *wp;")
+        call = lambda args: f"deriv(p, {args}, rng, t_step, &kx, &ky, &kz, &kw);"  # noqa: E731
+        decl = "    real kx, ky, kz, kw;"
+        tail = "    *xp = x; *yp = y; *zp = z; *wp = w;\n"
     body = [head, decl]
     if integrator == "euler":
-        body += [f"    {call('x, y, z')}", "    x += dt * kx; y += dt * ky; z += dt * kz;"]
+        body += [f"    {call('x, y, z, w')}", "    x += dt * kx; y += dt * ky; z += dt * kz; w += dt * kw;"]
     elif integrator == "rk2":
         body += [
-            f"    {call('x, y, z')}",
-            "    real h = R(0.5) * dt; real mx = x + h * kx, my = y + h * ky, mz = z + h * kz;",
-            f"    {call('mx, my, mz')}",
-            "    x += dt * kx; y += dt * ky; z += dt * kz;",
+            f"    {call('x, y, z, w')}",
+            "    real h = R(0.5) * dt; real mx = x + h * kx, my = y + h * ky, mz = z + h * kz, mw = w + h * kw;",
+            f"    {call('mx, my, mz, mw')}",
+            "    x += dt * kx; y += dt * ky; z += dt * kz; w += dt * kw;",
         ]
     else:
         body += [
             "    real h = R(0.5) * dt;",
-            f"    {call('x, y, z')}",
-            "    real k1x = kx, k1y = ky, k1z = kz;",
-            f"    {call('x + h * k1x, y + h * k1y, z + h * k1z')}",
-            "    real k2x = kx, k2y = ky, k2z = kz;",
-            f"    {call('x + h * k2x, y + h * k2y, z + h * k2z')}",
-            "    real k3x = kx, k3y = ky, k3z = kz;",
-            f"    {call('x + dt * k3x, y + dt * k3y, z + dt * k3z')}",
+            f"    {call('x, y, z, w')}",
+            "    real k1x = kx, k1y = ky, k1z = kz, k1w = kw;",
+            f"    {call('x + h * k1x, y + h * k1y, z + h * k1z, w + h * k1w')}",
+            "    real k2x = kx, k2y = ky, k2z = kz, k2w = kw;",
+            f"    {call('x + h * k2x, y + h * k2y, z + h * k2z, w + h * k2w')}",
+            "    real k3x = kx, k3y = ky, k3z = kz, k3w = kw;",
+            f"    {call('x + dt * k3x, y + dt * k3y, z + dt * k3z, w + dt * k3w')}",
             "    real s = dt / R(6.0);",
             "    x += s * (k1x + R(2.0) * k2x + R(2.0) * k3x + kx);",
             "    y += s * (k1y + R(2.0) * k2y + R(2.0) * k3y + ky);",
             "    z += s * (k1z + R(2.0) * k2z + R(2.0) * k3z + kz);",
+            "    w += s * (k1w + R(2.0) * k2w + R(2.0) * k3w + kw);",
         ]
     body.append(tail + "}")
     return "\n".join(body)
 
 
+def _temps(prog: Program, em: GlslEmitter) -> list[str]:
+    return [f"    {em.declare(s.target)} = {em.expr(s.expr)};" for s in prog.body if isinstance(s, Assign) and s.is_temp]
+
+
 def generate_color_fn(prog: Program, an: Analysis, dialect: str = "glsl") -> str:
     color = _special(prog, "color")
-    if dialect == "glsl":
-        head = "real color_fn(real x, real y, real z) {"
-    else:
-        head = "real color_fn(__constant float* p, real x, real y, real z) {"
+    pfx = "" if dialect == "glsl" else "__constant float* p, "
+    head = f"real color_fn({pfx}real x, real y, real z, real w) {{"
     if color is None:
         return head + "\n    return R(0.0);\n}"
     em = GlslEmitter(an.params, dialect)
-    lines = [head]
-    for s in prog.body:
-        if isinstance(s, Assign) and s.is_temp:
-            lines.append(f"    {em.declare(s.target)} = {em.expr(s.expr)};")
-    lines.append(f"    return {em.expr(color.expr)};")
-    lines.append("}")
+    lines = [head, *_temps(prog, em), f"    return {em.expr(color.expr)};", "}"]
     return "\n".join(lines)
 
 
+def generate_plot_fn(prog: Program, an: Analysis, dialect: str = "glsl") -> str:
+    """``plot_fn``: the drawn point for a state (default: the state itself)."""
+    plot = _special(prog, "plot")
+    if dialect == "glsl":
+        head = "void plot_fn(real x, real y, real z, real w, out real px, out real py, out real pz) {"
+        assign = "    px = {0}; py = {1}; pz = {2};"
+    else:
+        head = "void plot_fn(__constant float* p, real x, real y, real z, real w, real* px, real* py, real* pz) {"
+        assign = "    *px = {0}; *py = {1}; *pz = {2};"
+    if plot is None:
+        return head + "\n" + assign.format("x", "y", "z") + "\n}"
+    em = GlslEmitter(an.params, dialect)
+    assert isinstance(plot.expr, Tuple)
+    ex = [em.expr(e) for e in plot.expr.items]
+    return "\n".join([head, *_temps(prog, em), assign.format(*ex), "}"])
+
+
+def generate_section_fn(prog: Program, an: Analysis, dialect: str = "glsl") -> str:
+    sec = _special(prog, "section")
+    pfx = "" if dialect == "glsl" else "__constant float* p, "
+    head = f"real section_fn({pfx}real x, real y, real z, real w) {{"
+    if sec is None:
+        return head + "\n    return R(1.0);\n}"
+    em = GlslEmitter(an.params, dialect)
+    return "\n".join([head, *_temps(prog, em), f"    return {em.expr(sec.expr)};", "}"])
+
+
 def generate_gpu_source(prog: Program, an: Analysis, integrator: str = "rk4", dialect: str = "glsl") -> str:
-    """step() + color_fn() for the given dialect (prelude not included)."""
-    return generate_step(prog, an, integrator, dialect) + "\n\n" + generate_color_fn(prog, an, dialect) + "\n"
+    """step() + color_fn() + plot_fn() + section_fn() for the given dialect (prelude not
+    included).  ``#define HAS_PLOT / HAS_SECTION`` let the kernels skip the extra calls."""
+    defines = f"#define HAS_PLOT {int(an.has_plot)}\n#define HAS_SECTION {int(an.has_section)}\n"
+    return (defines + generate_step(prog, an, integrator, dialect) + "\n\n" + generate_color_fn(prog, an, dialect) + "\n\n"
+            + generate_plot_fn(prog, an, dialect) + "\n\n" + generate_section_fn(prog, an, dialect) + "\n")

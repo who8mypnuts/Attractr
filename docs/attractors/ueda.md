@@ -1,0 +1,54 @@
+# Ueda
+
+`ueda` · flow · 2-D · family: Flows
+
+![Ueda](images/ueda.png)
+
+Yoshisuke Ueda's "broken egg" — the forced Duffing oscillator without the linear term, x'' + k·x' + x³ = B cos t, which he observed on an analogue computer in 1961 before chaos had a name. Shown as the full phase-plane flow; use the stroboscopic variant for the broken-egg section.
+
+## Equations
+
+```text
+dx/dt = y
+dy/dt = −k · y − x³ + B · cos(w)
+dz/dt = 0
+dw = 1
+plot = x, y, 0
+```
+
+## Parameters
+
+| Name | Default | Range | Meaning |
+|---|---|---|---|
+| k | 0.05 | [0, 0.5] | k — damping. |
+| B | 7.5 | [0, 15] | B — forcing amplitude. |
+
+Integration: RK4, default dt = 0.01, initial condition (2.5, 0.0, 0.0, 0.0).
+
+## References
+
+- Y. Ueda, "Random phenomena resulting from nonlinearity in the system described by Duffing's equation", Int. J. Non-Linear Mech. 20 (1985)
+
+## Source (`.atr`)
+
+```text
+name: Ueda
+family: Flows
+desc: Yoshisuke Ueda's "broken egg" — the forced Duffing oscillator without the linear term, x'' + k·x' + x³ = B cos t, which he observed on an analogue computer in 1961 before chaos had a name. Shown as the full phase-plane flow; use the stroboscopic variant for the broken-egg section.
+ref: Y. Ueda, "Random phenomena resulting from nonlinearity in the system described by Duffing's equation", Int. J. Non-Linear Mech. 20 (1985)
+tags: flow, driven, 2d
+dt: 0.01
+ic: 2.5 0 0 0
+camera: 0 0 0 1
+
+param k = 0.05 [0, 0.5] "k — damping."
+param B = 7.5 [0, 15] "B — forcing amplitude."
+
+dx = y
+dy = -k*y - x^3 + B*cos(w)
+dz = 0
+dw = 1
+plot = x, y, 0
+```
+
+Render it: `attractr render ueda --size 2048x2048 --report md`

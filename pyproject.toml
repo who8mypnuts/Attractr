@@ -43,7 +43,7 @@ package-dir = { "" = "src" }
 where = ["src"]
 
 [tool.setuptools.package-data]
-attractr = ["resources/**/*", "core/render/shaders/*.glsl", "core/render/shaders/*.cl"]
+attractr = ["resources/**/*", "core/render/shaders/*.glsl", "core/render/shaders/*.cl", "core/render/shaders/*.comp", "core/render/shaders/*.vert", "core/render/shaders/*.frag"]
 
 [tool.ruff]
 line-length = 120

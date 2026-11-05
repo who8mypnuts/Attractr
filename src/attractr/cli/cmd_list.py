@@ -12,7 +12,7 @@ from attractr.core.render.settings import COLOR_SOURCES, INTEGRATORS, STYLES
 
 def add_parser(sub) -> None:
     ap = sub.add_parser("list", help="list attractors, palettes, engines, styles")
-    ap.add_argument("what", choices=("attractors", "palettes", "engines", "styles", "colors", "integrators"), nargs="?", default="attractors")
+    ap.add_argument("what", choices=("attractors", "palettes", "engines", "styles", "colors", "integrators", "render-presets"), nargs="?", default="attractors")
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--family", help="filter attractors by family")
     ap.set_defaults(func=run)
@@ -54,6 +54,14 @@ def run(a) -> int:
             for k, c in caps.items():
                 flag = "available" if c.available else "unavailable"
                 print(f"  {k:14s} {c.name:28s} {flag:12s} {c.device}  {'; '.join(c.notes)}")
+    elif a.what == "render-presets":
+        from attractr.core.project.render_presets import render_presets
+
+        if a.json:
+            print(json.dumps([p.to_dict() | {"builtin": p.builtin} for p in render_presets.all()], indent=1))
+        else:
+            for p in render_presets.all():
+                print(f"  {p.name:34s} {p.summary}{'' if p.builtin else '  (user)'}")
     elif a.what == "styles":
         print("\n".join(STYLES) if not a.json else json.dumps(list(STYLES)))
     elif a.what == "colors":

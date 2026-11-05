@@ -30,7 +30,8 @@ def sample_attractor(
     seed: int, n_traj: int = SAMPLE_TRAJECTORIES, steps: int = SAMPLE_STEPS,
     cancel: CancelToken = NEVER,
 ) -> np.ndarray:
-    """Return ``[n_traj·steps, 3]`` world points on the attractor (NaN rows = diverged).
+    """Return ``[n_traj·steps, 7]`` rows ``(x, y, z, w, px, py, pz)``: the state (used to seed
+    trajectories) and the plotted point (used for framing; NaN where nothing is plotted).
 
     The transient is discarded adaptively: after ``warmup`` steps we keep advancing in
     chunks until the sampled bounding sphere stops changing (slowly unfolding systems
@@ -41,7 +42,7 @@ def sample_attractor(
     ic = np.asarray(spec.ic, dtype=np.float64)
     restarts = np.zeros(n_traj, dtype=np.int64)
     chunk = 64
-    scratch = np.empty((n_traj * chunk, 3), dtype=np.float64)
+    scratch = np.empty((n_traj * chunk, 7), dtype=np.float64)
     t_done = 0
 
     def advance(nsteps: int) -> None:
@@ -50,17 +51,19 @@ def sample_attractor(
         while done < nsteps:
             cancel.check()
             k = min(chunk, nsteps - done)
-            mod.sample_points(st.X, st.Y, st.Z, st.RS, params, dt, substeps, k, float(t_done),
+            mod.sample_points(st.X, st.Y, st.Z, st.W, st.SEC, st.RS, params, dt, substeps, k, float(t_done),
                               scratch[: n_traj * k], restarts, ic, spec.jitter)
             done += k
             t_done += k
 
     def sample() -> np.ndarray:
         nonlocal t_done
-        out = np.empty((n_traj * steps, 3), dtype=np.float64)
-        mod.sample_points(st.X, st.Y, st.Z, st.RS, params, dt, substeps, steps, float(t_done),
+        out = np.empty((n_traj * steps, 7), dtype=np.float64)
+        before = restarts.copy()
+        mod.sample_points(st.X, st.Y, st.Z, st.W, st.SEC, st.RS, params, dt, substeps, steps, float(t_done),
                           out, restarts, ic, spec.jitter)
         t_done += steps
+        _drop_escapees(out.reshape(n_traj, steps, 7), restarts != before)
         return out
 
     advance(warmup)
@@ -77,8 +80,35 @@ def sample_attractor(
     return pts
 
 
+ESCAPEE_RATIO = 20.0  # a trajectory wandering this many times further out than the median is leaving
+
+
+def _drop_escapees(rows: np.ndarray, escaped: np.ndarray) -> None:
+    """Blank (NaN) the trajectories that diverged during the sample or are clearly on their way
+    out (their extent dwarfs the median trajectory's), so a few seeds outside a small basin of
+    attraction cannot blow up the framing.  ``rows`` is ``[n_traj, steps, 7]``; never blanks
+    more than half of the trajectories."""
+    n = rows.shape[0]
+    with np.errstate(invalid="ignore"):
+        extent = np.nanmax(np.abs(rows[:, :, :4]), axis=(1, 2))
+    finite = np.isfinite(extent)
+    if finite.sum() < 4:
+        return
+    med = float(np.median(extent[finite]))
+    far = finite & (extent > ESCAPEE_RATIO * max(med, 1e-12))
+    bad = escaped | far
+    if 0 < bad.sum() <= n // 2:
+        rows[bad] = np.nan
+
+
+def plotted(pts: np.ndarray) -> np.ndarray:
+    """The finite plotted points of a framing sample (columns 4..7, or 0..3 for plain clouds)."""
+    p = pts[:, 4:7] if pts.shape[1] >= 7 else pts[:, :3]
+    return p[np.all(np.isfinite(p), axis=1)]
+
+
 def framing_from_points(pts: np.ndarray) -> Framing:
-    good = pts[np.all(np.isfinite(pts), axis=1)]
+    good = plotted(pts)
     if good.shape[0] < 8:
         return Framing((0.0, 0.0, 0.0), 1.0)
     lo = np.percentile(good, PCT_LO, axis=0)
@@ -93,7 +123,7 @@ def framing_from_points(pts: np.ndarray) -> Framing:
 
 def fit_2d(framing: Framing, camera: Camera, pts: np.ndarray, width: int, height: int, margin: float = 0.03) -> Framing:
     """Tight 2-D fit: extra zoom/pan so the projected cloud fills the frame (camera.fit == "bbox")."""
-    good = pts[np.all(np.isfinite(pts), axis=1)]
+    good = plotted(pts)
     if good.shape[0] < 8:
         return framing
     unit = (good - np.asarray(framing.center)) / framing.radius

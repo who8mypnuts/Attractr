@@ -1,0 +1,12 @@
+{
+ "schema": 1,
+ "presets": [
+  {"name": "Draft 1024²", "width": 1024, "height": 1024, "points_per_pixel": 4, "supersample": 1, "splat_radius": 0, "engine": "auto", "precision": "auto", "fmt": "png", "bit_depth": 8, "report_formats": [], "dynamics": false},
+  {"name": "Instagram 1080²", "width": 1080, "height": 1080, "points_per_pixel": 20, "supersample": 2, "splat_radius": 0, "engine": "auto", "precision": "auto", "fmt": "png", "bit_depth": 8, "report_formats": [], "dynamics": false},
+  {"name": "Wallpaper 1920×1080", "width": 1920, "height": 1080, "points_per_pixel": 16, "supersample": 2, "splat_radius": 0, "engine": "auto", "precision": "auto", "fmt": "png", "bit_depth": 8, "report_formats": ["md"], "dynamics": false},
+  {"name": "Wallpaper 4K", "width": 3840, "height": 2160, "points_per_pixel": 16, "supersample": 2, "splat_radius": 0, "engine": "auto", "precision": "auto", "fmt": "png", "bit_depth": 8, "report_formats": ["md"], "dynamics": false},
+  {"name": "Square 4K ultra", "width": 4096, "height": 4096, "points_per_pixel": 40, "supersample": 2, "splat_radius": 0, "engine": "auto", "precision": "auto", "fmt": "png", "bit_depth": 16, "report_formats": ["md"], "dynamics": true},
+  {"name": "A3 print 300 dpi + PDF report", "width": 4961, "height": 3508, "points_per_pixel": 30, "supersample": 2, "splat_radius": 0, "engine": "auto", "precision": "auto", "fmt": "png", "bit_depth": 16, "report_formats": ["pdf"], "dynamics": true},
+  {"name": "Poster 8K", "width": 7680, "height": 7680, "points_per_pixel": 24, "supersample": 1, "splat_radius": 0, "engine": "auto", "precision": "auto", "fmt": "png", "bit_depth": 16, "report_formats": ["html"], "dynamics": false}
+ ]
+}

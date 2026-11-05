@@ -20,7 +20,7 @@ dz/dt = sin(x) − b · z
 |---|---|---|---|
 | b | 0.208186 | [0.05, 0.5] | Damping — lower values make the orbit more chaotic. Below ≈ 0.21 it becomes hyperchaotic. |
 
-Integration: RK4, default dt = 0.05, initial condition (0.1, 0.0, 0.0).
+Integration: RK4, default dt = 0.05, initial condition (0.1, 0.0, 0.0, 0.0).
 
 ## References
 

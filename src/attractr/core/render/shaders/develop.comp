@@ -1,0 +1,106 @@
+#version 430
+// Development pass on the GPU: density buffers → straight-alpha RGBA, one pixel per
+// invocation.  Mirrors core/render/develop/{tonemap,styles,developer}.py for the
+// per-pixel styles (gas, dust, light, plasma); liquid/solid (screen-space lighting),
+// histogram equalisation and bloom stay on the CPU.
+layout(local_size_x = 256) in;
+
+layout(std430, binding = 0) readonly buffer Count    { float count[]; };
+layout(std430, binding = 1) readonly buffer CvSum    { float cv_sum[]; };
+layout(std430, binding = 2) readonly buffer DepthSum { float depth_sum[]; };
+layout(std430, binding = 3) readonly buffer Lut      { vec4 lut[]; };
+layout(std430, binding = 4) writeonly buffer Out     { vec4 rgba[]; };
+
+uniform int   u_n;          // pixels in this chunk
+uniform int   u_width;
+uniform int   u_row0;       // first image row of this chunk (for gradient backgrounds)
+uniform int   u_height;
+uniform int   u_lut_n;
+uniform int   u_style;      // 0 gas, 1 dust, 2 light, 3 plasma
+uniform int   u_flags;      // 1 has_cv, 2 has_depth, 4 invert, 8 transparent bg, 16 gradient bg
+uniform float u_norm;
+uniform float u_gamma;
+uniform float u_brightness;
+uniform float u_contrast;
+uniform float u_bands;
+uniform float u_depth_cue;
+uniform vec2  u_cv_range;    // lo, hi of the mean colour value (1–99 %)
+uniform vec2  u_depth_range; // lo, hi of the mean depth (1–99 %)
+uniform vec3  u_bg0;
+uniform vec3  u_bg1;
+
+vec4 sample_lut(float t) {
+    int i = clamp(int(t * float(u_lut_n - 1) + 0.5), 0, u_lut_n - 1);
+    return lut[i];
+}
+
+float curve(float d) {
+    if (u_gamma != 1.0 && u_gamma > 0.0) d = pow(d, u_gamma);
+    d *= u_brightness;
+    if (u_contrast != 0.0) {
+        float k = clamp(u_contrast, -0.99, 0.99);
+        float x = d - 0.5;
+        d = 0.5 + x * (1.0 + k) / (1.0 + k * abs(x) * 2.0);
+    }
+    d = clamp(d, 0.0, 1.0);
+    if ((u_flags & 4) != 0) d = 1.0 - d;
+    return d;
+}
+
+void main() {
+    uint i = gl_GlobalInvocationID.x;
+    if (i >= uint(u_n)) return;
+    float c = count[i];
+    bool has_cv = (u_flags & 1) != 0, has_depth = (u_flags & 2) != 0;
+    bool inside = c > 0.0;
+    // ── tone mapping (tonemap.base_density + apply_curve) ─────────────────────
+    float d;
+    if (u_style == 1) d = clamp(pow(max(c, 0.0) / u_norm, 0.25), 0.0, 1.0);
+    else              d = clamp(log(1.0 + c) / log(1.0 + u_norm), 0.0, 1.0);
+    d = curve(d);
+    if (!inside) d = ((u_flags & 4) != 0) ? 1.0 : 0.0;
+    // ── depth factor (styles.depth_factor) ────────────────────────────────────
+    float df = 1.0;
+    if (has_depth && u_depth_cue > 0.0 && inside) {
+        float md = depth_sum[i] / max(c, 1e-30);
+        float dn = clamp((md - u_depth_range.x) / (u_depth_range.y - u_depth_range.x), 0.0, 1.0);
+        df = 1.0 - u_depth_cue * 0.8 * dn;
+    }
+    float ci = 0.0;
+    if (has_cv) {
+        float cv = inside ? cv_sum[i] / max(c, 1e-30) : 0.0;
+        ci = clamp((cv - u_cv_range.x) / (u_cv_range.y - u_cv_range.x), 0.0, 1.0);
+    }
+    // ── styles ─────────────────────────────────────────────────────────────────
+    vec3 rgb; float a;
+    if (u_style == 0 || u_style == 1) {
+        float dd = d * df;
+        if (has_cv) { vec4 p = sample_lut(ci); rgb = p.rgb * dd; a = p.a * dd; }
+        else        { vec4 p = sample_lut(dd); rgb = p.rgb;      a = p.a * dd; }
+    } else if (u_style == 2) {
+        vec4 p = sample_lut(has_cv ? ci : d);
+        float b = d * df;
+        rgb = clamp(p.rgb * b, 0.0, 1.0);
+        a = clamp(b * 1.5, 0.0, 1.0);
+    } else {
+        float t = fract(d * u_bands);
+        vec4 p = sample_lut(t);
+        float soft = clamp(d * 2.0, 0.0, 1.0);
+        rgb = clamp(p.rgb * soft, 0.0, 1.0);
+        a = soft;
+    }
+    a = clamp(a, 0.0, 1.0);
+    // ── background + compositing (developer.develop) ───────────────────────────
+    vec3 bg = u_bg0;
+    float bga = 1.0;
+    if ((u_flags & 16) != 0) {
+        int row = u_row0 + int(i) / u_width;
+        float t = (u_height > 1) ? float(row) / float(u_height - 1) : 0.0;
+        bg = u_bg0 * (1.0 - t) + u_bg1 * t;
+    }
+    if ((u_flags & 8) != 0) { bg = vec3(0.0); bga = 0.0; }
+    vec3 outc = rgb * a + bg * (1.0 - a) * bga;
+    float outa = a + bga * (1.0 - a);
+    if ((u_flags & 8) != 0 && outa > 1e-6) outc /= outa;
+    rgba[i] = clamp(vec4(outc, outa), 0.0, 1.0);
+}

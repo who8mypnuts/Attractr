@@ -40,10 +40,10 @@ def warm_all(on_progress: Callable[[int, int, str], None] | None = None, include
             mod = kernel_module(cf)
             p = spec.params_array()
             rs = np.ones(4, dtype=np.uint32)
-            mod.step(0.1, 0.1, 0.1, p, rs, 0, 0.0, spec.dt)
+            mod.step(0.1, 0.1, 0.1, 0.0, p, rs, 0, 0.0, spec.dt)
             X = np.full(4, 0.1)
-            out = np.zeros((4 * 2, 3))
-            mod.sample_points(X.copy(), X.copy(), X.copy(), rs, p, spec.dt, 1, 2, 0.0, out, np.zeros(4, dtype=np.int64), np.zeros(3), 0.1)
+            out = np.zeros((4 * 2, 7))
+            mod.sample_points(X.copy(), X.copy(), X.copy(), np.zeros(4), np.zeros(4), rs, p, spec.dt, 1, 2, 0.0, out, np.zeros(4, dtype=np.int64), np.zeros(3), 0.1)
             # the default (gas) accumulate variant is what previews and thumbnails use
             if include_accumulate:
                 from attractr.core.render.engines.cpu_numba import CpuEngine

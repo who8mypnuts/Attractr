@@ -21,7 +21,7 @@ dz/dt = −2 · z · (α + x · y)
 | alpha | 0.14 | [0.05, 0.3] | α |
 | gamma | 0.1 | [0.05, 0.3] | γ |
 
-Integration: RK4, default dt = 0.01, initial condition (-1.0, 0.0, 0.5).
+Integration: RK4, default dt = 0.01, initial condition (-1.0, 0.0, 0.5, 0.0).
 
 ## References
 

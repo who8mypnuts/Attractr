@@ -57,9 +57,10 @@ class AttractorSpec:
     family: str = ""
     tags: tuple[str, ...] = ()
     dt: float = 0.01
-    ic: tuple[float, float, float] = (0.1, 0.1, 0.1)
+    ic: tuple[float, float, float, float] = (0.1, 0.1, 0.1, 0.0)  # x, y, z, w
     jitter: float = 0.1
     warmup: int = 1000
+    boost: float = 1.0  # iteration multiplier (Poincaré sections plot only a fraction of the steps)
     camera: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 1.0)  # yaw, pitch, roll, zoom
     palette: str = "nebula"
     style: str = "gas"
@@ -79,6 +80,16 @@ class AttractorSpec:
     @property
     def is_flow(self) -> bool:
         return self.kind == "flow"
+
+    def iteration_budget(self, quality_iterations: int) -> int:
+        """Steps the engines actually run for a requested ``Quality.iterations``."""
+        return int(round(quality_iterations * self.boost))
+
+    @property
+    def plots_continuous(self) -> bool:
+        """True when consecutive plotted points are neighbours on a curve (a flow without a
+        Poincaré ``section``) — the only case where gap filling makes sense."""
+        return self.kind == "flow" and not self.analysis.has_section
 
     def default_params(self) -> dict[str, float]:
         return {p.name: p.default for p in self.params}
@@ -121,12 +132,16 @@ def spec_from_source(source: str, id: str | None = None, path: Path | None = Non
     if "camera" in h:
         vals = _parse_floats(h["camera"])
         camera = tuple((list(vals) + [0.0, 0.0, 0.0, 1.0])[:4])  # type: ignore[assignment]
-    ic = (0.1, 0.1, 0.1)
+    ic = (0.1, 0.1, 0.1, 0.0)
     if "ic" in h:
-        ic = _parse_floats(h["ic"], 3)  # type: ignore[assignment]
+        vals = _parse_floats(h["ic"])
+        if len(vals) not in (3, 4):
+            raise FormulaError(f"ic: expected 3 or 4 numbers (x y z [w]), got {len(vals)}: {h['ic']!r}")
+        ic = tuple((list(vals) + [0.0])[:4])  # type: ignore[assignment]
     dt = eval_const(h["dt"]) if "dt" in h else (0.01 if an.kind == "flow" else 1.0)
     tags = tuple(t.strip() for t in re.split(r"[,\n]", h.get("tags", "")) if t.strip())
     refs = tuple(r.strip() for r in h.get("ref", "").split("\n") if r.strip())
+    boost = max(1.0, float(eval_const(h["boost"]))) if "boost" in h else 1.0
     lyap = float(h["lyapunov"]) if "lyapunov" in h else None
     return AttractorSpec(
         id=spec_id,
@@ -145,6 +160,7 @@ def spec_from_source(source: str, id: str | None = None, path: Path | None = Non
         tags=tags,
         dt=dt,
         ic=ic,
+        boost=boost,
         jitter=float(h.get("jitter", 0.1)) if "jitter" in h else 0.1,
         warmup=int(float(h["warmup"])) if "warmup" in h else default_warmup(an.kind, dt),
         camera=camera,

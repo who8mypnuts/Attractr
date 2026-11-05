@@ -1,0 +1,71 @@
+# Sierpinski carpet
+
+`sierpinski_carpet` · ifs · 2-D · family: IFS
+
+![Sierpinski carpet](images/sierpinski_carpet.png)
+
+Eight similarity maps of ratio 1/3 tile the unit square minus its middle — the 2-D cousin of the Menger sponge. The ratio is exposed so you can open the gaps or let the copies overlap.
+
+## Equations
+
+```text
+g = (1 − s) / 2
+with p = 1:
+    x′ = s · x
+    y′ = s · y
+with p = 1:
+    x′ = s · x + g
+    y′ = s · y
+with p = 1:
+    x′ = s · x + 1 − s
+    y′ = s · y
+with p = 1:
+    x′ = s · x
+    y′ = s · y + g
+with p = 1:
+    x′ = s · x + 1 − s
+    y′ = s · y + g
+with p = 1:
+    x′ = s · x
+    y′ = s · y + 1 − s
+with p = 1:
+    x′ = s · x + g
+    y′ = s · y + 1 − s
+with p = 1:
+    x′ = s · x + 1 − s
+    y′ = s · y + 1 − s
+```
+
+## Parameters
+
+| Name | Default | Range | Meaning |
+|---|---|---|---|
+| s | 0.3333 | [0.2, 0.5] | Contraction ratio (1/3 is the carpet). |
+
+## Source (`.atr`)
+
+```text
+name: Sierpinski carpet
+family: IFS
+desc: Eight similarity maps of ratio 1/3 tile the unit square minus its middle — the 2-D cousin of the Menger sponge. The ratio is exposed so you can open the gaps or let the copies overlap.
+tags: ifs, 2d, classic
+dims: 2
+warmup: 20
+ic: 0.5 0.5 0
+
+param s = 0.3333 [0.2, 0.5] "Contraction ratio (1/3 is the carpet)."
+
+g = (1 - s)/2
+choose {
+  1: x' = s*x;          y' = s*y
+  1: x' = s*x + g;      y' = s*y
+  1: x' = s*x + 1 - s;  y' = s*y
+  1: x' = s*x;          y' = s*y + g
+  1: x' = s*x + 1 - s;  y' = s*y + g
+  1: x' = s*x;          y' = s*y + 1 - s
+  1: x' = s*x + g;      y' = s*y + 1 - s
+  1: x' = s*x + 1 - s;  y' = s*y + 1 - s
+}
+```
+
+Render it: `attractr render sierpinski_carpet --size 2048x2048 --report md`

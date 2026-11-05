@@ -21,7 +21,7 @@ dz/dt = −x · (1.5 − s · z) − 0.05 · z
 | a | 0.3 | [0.1, 0.6] |  |
 | s | 1 | [0.5, 1.5] |  |
 
-Integration: RK4, default dt = 0.005, initial condition (1.0, 0.1, 0.1).
+Integration: RK4, default dt = 0.005, initial condition (1.0, 0.1, 0.1, 0.0).
 
 ## References
 

@@ -39,9 +39,12 @@ class ProgressTracker:
         self._min = min_interval
         self.latest = Progress(0.0)
 
-    def update(self, fraction: float, message: str = "", force: bool = False) -> None:
+    def update(self, fraction: float | None, message: str = "", force: bool = False) -> None:
+        """``fraction=None`` keeps the previous fraction (message-only update)."""
         now = time.perf_counter()
         elapsed = now - self._start
+        if fraction is None:
+            fraction = self.latest.fraction if self.latest is not None else 0.0
         fraction = min(max(fraction, 0.0), 1.0)
         eta = (elapsed / fraction - elapsed) if fraction > 0.01 else None
         self.latest = Progress(fraction, message, elapsed, eta)

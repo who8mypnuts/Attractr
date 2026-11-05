@@ -21,7 +21,7 @@ dz/dt = −z − (T − R + R · x²) · y − T · x
 | T | 6 | [3, 10] |  |
 | R | 20 | [10, 40] |  |
 
-Integration: RK4, default dt = 0.01, initial condition (0.1, 0.1, 0.1).
+Integration: RK4, default dt = 0.01, initial condition (0.1, 0.1, 0.1, 0.0).
 
 ## References
 

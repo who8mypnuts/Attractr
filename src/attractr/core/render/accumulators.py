@@ -42,7 +42,10 @@ def color_value_range(code: int, sample_pts, framing, camera_matrix, params=None
     re-normalises by the 1–99 % percentiles anyway)."""
     import numpy as np
 
-    pts = sample_pts[np.all(np.isfinite(sample_pts), axis=1)]
+    from attractr.core.render.framing import plotted
+
+    pts = plotted(sample_pts)
+    states = sample_pts[np.all(np.isfinite(sample_pts), axis=1)] if sample_pts.shape[1] >= 7 else pts
     if pts.shape[0] < 4 or code == 0:
         return -4.0, 4.0
     unit = (pts - np.asarray(framing.center)) / framing.radius
@@ -58,9 +61,9 @@ def color_value_range(code: int, sample_pts, framing, camera_matrix, params=None
     elif code in (7, 8):
         return 0.0, 1.0
     elif code == 9 and color_fn is not None:
-        step = max(1, pts.shape[0] // 4096)
-        sub = pts[::step]
-        v = np.array([color_fn(float(x), float(y), float(z), params) for x, y, z in sub])
+        step = max(1, states.shape[0] // 4096)
+        sub = states[::step]
+        v = np.array([color_fn(float(r[0]), float(r[1]), float(r[2]), float(r[3]) if len(r) >= 4 else 0.0, params) for r in sub])
     else:
         return -4.0, 4.0
     v = v[np.isfinite(v)]

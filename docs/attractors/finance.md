@@ -22,7 +22,7 @@ dz/dt = −x − c · z
 | b | 0.1 | [0.05, 0.3] | Cost per investment. |
 | c | 1 | [0.5, 2] | Elasticity of demand. |
 
-Integration: RK4, default dt = 0.01, initial condition (1.0, -8.0, 0.5).
+Integration: RK4, default dt = 0.01, initial condition (1.0, -8.0, 0.5, 0.0).
 
 ## References
 

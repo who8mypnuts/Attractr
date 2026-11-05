@@ -21,7 +21,7 @@ dz/dt = −x + y + y²
 | a | 2 | [1, 3] |  |
 | b | 2 | [1, 3] |  |
 
-Integration: RK4, default dt = 0.02, initial condition (0.1, 0.1, 0.1).
+Integration: RK4, default dt = 0.02, initial condition (0.1, 0.1, 0.1, 0.0).
 
 ## References
 

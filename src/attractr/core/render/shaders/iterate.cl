@@ -11,8 +11,8 @@ typedef struct {
     int want_depth, want_zmin, want_color, do_plot;
     int w, h, n;
     float dt, inv_radius, cx, cy, focal, persp, jitter, inv_n;
-    float cv_lo, cv_inv_range;
-    float R[9], center[3], ic[3];
+    float cv_lo, cv_inv_range, t0;
+    float R[9], center[3], ic[4];
 } Params;
 
 inline uint _zkey(float z) { uint k = as_uint(z); return (k & 0x80000000u) ? ~k : (k | 0x80000000u); }
@@ -58,11 +58,11 @@ inline float splat(__global uint* cnt, __global uint* dep, __global uint* zmn, _
 }
 
 inline float color_value(__constant float* p, int code, float qx, float qy, float qz, float speed, float radius,
-                         float curv, float idx, real x, real y, real z) {
+                         float curv, float idx, real x, real y, real z, real w) {
     switch (code) {
         case 1: return qx; case 2: return qy; case 3: return qz; case 4: return qz;
         case 5: return speed; case 6: return radius; case 7: return idx; case 8: return curv;
-        case 9: return (float)color_fn(p, x, y, z);
+        case 9: return (float)color_fn(p, x, y, z, w);
     }
     return 0.0f;
 }
@@ -73,7 +73,8 @@ __kernel void iterate(__global real4* st, __global uint* rng_state, __global flo
     int i = get_global_id(0);
     if (i >= P->n) return;
     real4 s = st[i];
-    real x = s.x, y = s.y, z = s.z, tstep = s.w;
+    real x = s.x, y = s.y, z = s.z, w = s.w;
+    real tstep = (real)P->t0;
     real dt = (real)P->dt;
     uint rng = rng_state[i];
     float4 pv = prev[i];
@@ -81,17 +82,28 @@ __kernel void iterate(__global real4* st, __global uint* rng_state, __global flo
     float plotted = 0.0f;
     for (int n = 0; n < P->steps; n++) {
         real ox = x, oy = y, oz = z;
-        for (int k = 0; k < P->substeps; k++) { step(p, &x, &y, &z, &rng, tstep, dt); tstep += R(1.0); }
-        if (!isfinite(x) || !isfinite(y) || !isfinite(z) || fabs(x) > R(DIVERGE_LIMIT) || fabs(y) > R(DIVERGE_LIMIT) || fabs(z) > R(DIVERGE_LIMIT)) {
+        for (int k = 0; k < P->substeps; k++) { step(p, &x, &y, &z, &w, &rng, tstep, dt); tstep += R(1.0); }
+        if (!isfinite(x) || !isfinite(y) || !isfinite(z) || !isfinite(w) || fabs(x) > R(DIVERGE_LIMIT) || fabs(y) > R(DIVERGE_LIMIT) || fabs(z) > R(DIVERGE_LIMIT) || fabs(w) > R(DIVERGE_LIMIT)) {
             x = R(P->ic[0]) + (_rand(&rng) - R(0.5)) * R(P->jitter);
             y = R(P->ic[1]) + (_rand(&rng) - R(0.5)) * R(P->jitter);
             z = R(P->ic[2]) + (_rand(&rng) - R(0.5)) * R(P->jitter);
+            w = R(P->ic[3]);
             atomic_inc(&stats[0]);
             pv.w = 0.0f;
             continue;
         }
         if (!P->do_plot) continue;
-        float ux = (float)((x - R(P->center[0])) * R(P->inv_radius)), uy = (float)((y - R(P->center[1])) * R(P->inv_radius)), uz = (float)((z - R(P->center[2])) * R(P->inv_radius));
+#if HAS_SECTION
+        float sv = (float)section_fn(p, x, y, z, w);
+        bool crossed = sv * pd.w < 0.0f;
+        pd.w = sv;
+        if (!crossed) continue;
+#endif
+        real fx = x, fy = y, fz = z;
+#if HAS_PLOT
+        plot_fn(p, x, y, z, w, &fx, &fy, &fz);
+#endif
+        float ux = (float)((fx - R(P->center[0])) * R(P->inv_radius)), uy = (float)((fy - R(P->center[1])) * R(P->inv_radius)), uz = (float)((fz - R(P->center[2])) * R(P->inv_radius));
         float qx = P->R[0] * ux + P->R[1] * uy + P->R[2] * uz;
         float qy = P->R[3] * ux + P->R[4] * uy + P->R[5] * uz;
         float qz = P->R[6] * ux + P->R[7] * uy + P->R[8] * uz;
@@ -110,7 +122,7 @@ __kernel void iterate(__global real4* st, __global uint* rng_state, __global flo
                 if (la > 1e-12f && lb > 1e-12f) curv = 0.5f * (1.0f - _clamp((ddx * pd.x + ddy * pd.y + ddz * pd.z) / (la * lb), -1.0f, 1.0f));
                 pd.x = ddx; pd.y = ddy; pd.z = ddz;
             }
-            cv = color_value(p, P->color_code, qx, qy, qz, speed, sqrt(qx * qx + qy * qy + qz * qz), curv, (float)i * P->inv_n, x, y, z);
+            cv = color_value(p, P->color_code, qx, qy, qz, speed, sqrt(qx * qx + qy * qy + qz * qz), curv, (float)i * P->inv_n, x, y, z, w);
         }
         int nseg = 1;
         if (P->gap_fill && pv.w > 0.0f) {
@@ -128,7 +140,7 @@ __kernel void iterate(__global real4* st, __global uint* rng_state, __global flo
         }
         pv = (float4)(u, v, cv, 1.0f);
     }
-    st[i] = (real4)(x, y, z, tstep);
+    st[i] = (real4)(x, y, z, w);
     rng_state[i] = rng;
     prev[i] = pv;
     prevd[i] = pd;

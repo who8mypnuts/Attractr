@@ -21,7 +21,7 @@ dz/dt = β · z − 5 · x · y
 | alpha | 0.4 | [0.2, 0.6] | α |
 | beta | 0.175 | [0.1, 0.25] | β |
 
-Integration: RK4, default dt = 0.01, initial condition (0.349, 0.0, -0.16).
+Integration: RK4, default dt = 0.01, initial condition (0.349, 0.0, -0.16, 0.0).
 
 ## References
 

@@ -5,6 +5,8 @@
 | Command | Purpose |
 |---|---|
 | `attractr render TARGET [options]` | render a still image (+ report) |
+| `attractr svg TARGET [-o FILE] [--points N] [--stroke-width W]` | export one trajectory of the view as SVG polylines (flows) / dots (maps) — vector art for plotters; same projection as the render |
+| `attractr batch FOLDER --preset NAME` | render every `.attractr` / `.atr` / tagged `.png` in a folder with a render preset (`--list-presets`, `--dry-run`, `--out`, `--report`, `-r`) |
 | `attractr list attractors\|palettes\|engines\|styles\|colors\|integrators [--json]` | catalogue queries |
 | `attractr info [--json]` | system / engine probe |
 | `attractr thumb TARGET [-o file\|-]` | small PNG (to stdout for pipes) |
@@ -30,7 +32,9 @@
 --camera YAW,PITCH,ROLL  --zoom F  --perspective F  --fit bbox|sphere
 --param NAME=VALUE    (repeatable)                   --bits 8|16        PNG bit depth
 --report md,txt,html,pdf                             --dynamics         add Lyapunov/dimension to the report
--o FILE | -           output path or PNG to stdout
+-o FILE | -           output path or PNG to stdout   --develop auto|cpu|gpu  where the develop pass runs (gpu = GL compute, large images)
+--checkpoint-every MIN  write a resumable checkpoint every MIN minutes (kept on Ctrl-C)
+--resume FILE         continue from a .attractr-ckpt.npz checkpoint   --finish-after SEC   soft time limit (save what is there)
 ```
 
 Examples:
@@ -41,6 +45,7 @@ attractr render clifford -p a=-1.7 -p b=1.8 --style light --color-by speed -o fi
 attractr render 'ATR1:eJx...' --size 4096x4096 --engine gl_precision --ss 2 --report pdf
 attractr thumb aizawa --thumb-size 128 -o - | display -
 attractr list palettes --json | jq '.[].id'
+attractr batch ~/portfolio --preset 'A3 print 300 dpi + PDF report' --out ~/prints
 ```
 
 Exit codes: 0 success · 2 bad arguments / unknown attractor · 130 interrupted.

@@ -1,11 +1,21 @@
-"""SliderSpin: label + slider + spin box with an editable soft range, lock and reset."""
+"""SliderSpin: label + slider + spin box with an editable soft range, lock and reset.
+
+Scrubbing ergonomics (all relative to the soft range):
+
+* mouse wheel over the slider or the spin box: 1 % per notch — **Ctrl** 0.1 % (fine),
+  **Shift** 10 % (coarse);
+* ← / → on the slider: 1 % — **Shift** 10 %, **Ctrl** 0.1 %; Page Up/Down 10 %;
+* the − / + nudge buttons: 1 % per click (auto-repeat) with the same modifiers;
+* the context menu keeps the last 20 committed values ("Recent values"), plus copy/paste.
+"""
 
 from __future__ import annotations
 
 import math
+from collections import deque
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QAction
+from PySide6.QtCore import QEvent, Qt, Signal
+from PySide6.QtGui import QAction, QGuiApplication
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
@@ -21,6 +31,17 @@ from PySide6.QtWidgets import (
 )
 
 SLIDER_STEPS = 20000
+NUDGE = 0.01  # fraction of the soft range per wheel notch / arrow key / nudge click
+HISTORY = 20
+
+
+def modifier_scale(mods) -> float:
+    """Ctrl → ×0.1 (fine), Shift → ×10 (coarse)."""
+    if mods & Qt.KeyboardModifier.ControlModifier:
+        return 0.1
+    if mods & Qt.KeyboardModifier.ShiftModifier:
+        return 10.0
+    return 1.0
 
 
 class RangeDialog(QDialog):
@@ -81,22 +102,84 @@ class SliderSpin(QWidget):
         self.lock_btn.setToolTip("Lock (excluded from randomize)")
         self.lock_btn.setVisible(show_lock)
         self.lock_btn.toggled.connect(self._on_lock)
+        self.nudge_down = QToolButton()
+        self.nudge_up = QToolButton()
+        for b, txt, sign in ((self.nudge_down, "−", -1), (self.nudge_up, "+", 1)):
+            b.setText(txt)
+            b.setFixedWidth(18)
+            b.setAutoRepeat(True)
+            b.setAutoRepeatDelay(300)
+            b.setAutoRepeatInterval(60)
+            b.setToolTip("Nudge by 1 % of the range (Shift: 10 %, Ctrl: 0.1 %)")
+            b.clicked.connect(lambda _=False, sg=sign: self.nudge(sg * NUDGE * modifier_scale(QGuiApplication.keyboardModifiers())))
+        self.history: deque[float] = deque(maxlen=HISTORY)
 
         lay = QHBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(6)
+        lay.setSpacing(4)
         lay.addWidget(self.label)
+        lay.addWidget(self.nudge_down)
         lay.addWidget(self.slider, 1)
+        lay.addWidget(self.nudge_up)
         lay.addWidget(self.spin)
         lay.addWidget(self.lock_btn)
 
         self.set_value(value)
+        self._apply_steps()
         self.slider.valueChanged.connect(self._on_slider)
         self.slider.sliderPressed.connect(self.interactionStarted)
-        self.slider.sliderReleased.connect(self.interactionEnded)
+        self.slider.sliderReleased.connect(self._on_release)
         self.spin.valueChanged.connect(self._on_spin)
+        self.slider.installEventFilter(self)
+        self.spin.installEventFilter(self)
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self._menu)
+
+    # ── scrubbing ergonomics ───────────────────────────────────────────────────
+    def _apply_steps(self) -> None:
+        self.slider.setSingleStep(int(SLIDER_STEPS * NUDGE))
+        self.slider.setPageStep(int(SLIDER_STEPS * NUDGE * 10))
+        self.spin.setSingleStep(1 if self.is_int else (self.hi - self.lo) * NUDGE * 0.5)
+
+    def nudge(self, fraction: float) -> None:
+        """Move the value by ``fraction`` of the soft range (clamped to it)."""
+        if self.locked and not self.slider.isEnabled():
+            return
+        span = self.hi - self.lo
+        v = self.value() + fraction * span
+        if self.is_int:
+            v = self.value() + (1 if fraction > 0 else -1) * max(1, round(abs(fraction) * span))
+        v = min(max(v, self.lo), self.hi)
+        self.set_value(v)
+        self._remember(v)
+        self.valueChanged.emit(float(v))
+
+    def eventFilter(self, obj, ev) -> bool:  # noqa: N802 — Qt override
+        if ev.type() == QEvent.Type.Wheel and obj in (self.slider, self.spin):
+            if obj is self.spin and not self.spin.hasFocus():
+                return False  # let the scroll area scroll; an unfocused spin box does not eat the wheel
+            notches = ev.angleDelta().y() / 120.0
+            if notches:
+                self.nudge(notches * NUDGE * modifier_scale(ev.modifiers()))
+            return True
+        if ev.type() == QEvent.Type.KeyPress and obj is self.slider:
+            key = ev.key()
+            step = {Qt.Key.Key_Left: -1, Qt.Key.Key_Down: -1, Qt.Key.Key_Right: 1, Qt.Key.Key_Up: 1,
+                    Qt.Key.Key_PageDown: -10, Qt.Key.Key_PageUp: 10}.get(key)
+            if step is not None:
+                self.nudge(step * NUDGE * modifier_scale(ev.modifiers()))
+                return True
+        return super().eventFilter(obj, ev)
+
+    def _remember(self, v: float) -> None:
+        v = float(v)
+        if self.history and abs(self.history[-1] - v) <= 1e-12:
+            return
+        self.history.append(v)
+
+    def _on_release(self) -> None:
+        self._remember(self.value())
+        self.interactionEnded.emit()
 
     # ── mapping ────────────────────────────────────────────────────────────────
     def _to_slider(self, v: float) -> int:
@@ -134,7 +217,7 @@ class SliderSpin(QWidget):
         if self.hi <= self.lo:
             self.hi = self.lo + 1e-6
         self.log_scale = self.log_scale and self.lo > 0
-        self.spin.setSingleStep(1 if self.is_int else (self.hi - self.lo) / 200.0)
+        self._apply_steps()
         self.set_value(min(max(self.value(), self.lo), self.hi))
 
     # ── slots ───────────────────────────────────────────────────────────────────
@@ -156,6 +239,7 @@ class SliderSpin(QWidget):
             self._updating = True
             self.slider.setValue(self._to_slider(v))
             self._updating = False
+        self._remember(v)
         self.valueChanged.emit(float(v))
 
     def _on_lock(self, on: bool) -> None:
@@ -174,6 +258,18 @@ class SliderSpin(QWidget):
         a_narrow = QAction("Narrow range ×½ around value", m)
         a_narrow.triggered.connect(lambda: self._scale_range(0.5))
         m.addActions([a_reset, a_range, a_wide, a_narrow])
+        m.addSeparator()
+        a_copy = QAction("Copy value", m)
+        a_copy.triggered.connect(lambda: QGuiApplication.clipboard().setText(f"{self.value():.10g}"))
+        a_paste = QAction("Paste value", m)
+        a_paste.triggered.connect(self._paste)
+        m.addActions([a_copy, a_paste])
+        if self.history:
+            sub = m.addMenu("Recent values")
+            for v in reversed(list(self.history)):
+                act = QAction(f"{v:.6g}", sub)
+                act.triggered.connect(lambda _=False, val=v: self._apply_history(val))
+                sub.addAction(act)
         if self.lock_btn.isVisible():
             a_lock = QAction("Locked", m)
             a_lock.setCheckable(True)
@@ -184,8 +280,22 @@ class SliderSpin(QWidget):
 
     def _reset(self) -> None:
         self.set_value(self.default)
+        self._remember(self.default)
         self.valueChanged.emit(self.default)
         self.resetRequested.emit()
+
+    def _apply_history(self, v: float) -> None:
+        self.set_value(v)
+        self.valueChanged.emit(float(v))
+
+    def _paste(self) -> None:
+        try:
+            v = float(QGuiApplication.clipboard().text().strip().replace(",", "."))
+        except ValueError:
+            return
+        self.set_value(v)
+        self._remember(v)
+        self.valueChanged.emit(float(v))
 
     def _edit_range(self) -> None:
         d = RangeDialog(self.lo, self.hi, self)

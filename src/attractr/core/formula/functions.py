@@ -68,4 +68,4 @@ FUNCTIONS: dict[str, FunctionSpec] = {
     )
 }
 
-RESERVED_VARS = frozenset({"x", "y", "z", "t_step", "pi", "e", "tau"})  # a parameter may shadow "e"
+RESERVED_VARS = frozenset({"x", "y", "z", "w", "t_step", "pi", "e", "tau"})  # a parameter may shadow "e"

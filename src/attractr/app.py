@@ -18,6 +18,9 @@ def run_gui(argv: list[str]) -> int:
     QCoreApplication.setApplicationName(APP_NAME)
     QApplication.setAttribute(Qt.ApplicationAttribute.AA_DontCreateNativeWidgetSiblings, True)
     app = QApplication.instance() or QApplication(sys.argv[:1])
+    from attractr.i18n import install_translators
+
+    install_translators(app)
     from attractr.gui.theme.dark import apply_dark_theme
 
     apply_dark_theme(app)

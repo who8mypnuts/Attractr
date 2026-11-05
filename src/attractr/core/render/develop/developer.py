@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from attractr.core.render.develop import gpu_develop
 from attractr.core.render.develop.background import make_background
 from attractr.core.render.develop.styles import STYLES, make_context, percentile_norm
 from attractr.core.render.result import RenderResult
@@ -42,10 +43,19 @@ def quantize(rgba: np.ndarray, maxval: int, dither: bool, seed: int) -> np.ndarr
     return np.clip(np.rint(v), 0, maxval)
 
 
-def develop(result: RenderResult, look: Look | None = None) -> Developed:
+def develop(result: RenderResult, look: Look | None = None, *, gpu: str = "auto") -> Developed:
+    """``gpu``: "auto" (GPU compute pass for large images when available), "off" or "force"."""
     look = look or result.settings.look
     norm = percentile_norm(result.count, look.percentile)
     lut = look.gradient.lut(LUT_SIZE, look.phase, look.cycles)
+    if gpu != "off" and (gpu == "force" or gpu_develop.wanted(result, look)):
+        rgba = gpu_develop.develop_gpu(result, look, norm, lut)
+        if rgba is not None:
+            return Developed(rgba, norm)
+    return develop_cpu(result, look, norm, lut)
+
+
+def develop_cpu(result: RenderResult, look: Look, norm: float, lut: np.ndarray) -> Developed:
     ctx = make_context(result, look, norm, lut)
     rgb, alpha = STYLES.get(look.style, STYLES["gas"])(ctx)
     rgb = rgb.astype(np.float32, copy=False)

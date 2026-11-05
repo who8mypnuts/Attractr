@@ -24,7 +24,7 @@ dz/dt = b · z + x · y − e · x²
 | d | 0.5 | [0, 1] |  |
 | e | 0.65 | [0, 1] |  |
 
-Integration: RK4, default dt = 0.0005, initial condition (0.1, 0.1, 0.1).
+Integration: RK4, default dt = 0.0005, initial condition (0.1, 0.1, 0.1, 0.0).
 
 ## References
 

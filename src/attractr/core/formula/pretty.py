@@ -12,6 +12,7 @@ from attractr.core.formula.ast import (
     Expr,
     Num,
     Program,
+    Tuple,
     Unary,
     Var,
 )
@@ -72,6 +73,8 @@ def expr_to_source(e: Expr, parent_prec: int = 0, unicode: bool = False) -> str:
         prec = _PREC[e.op]
         s = f"{expr_to_source(e.left, prec, unicode)} {e.op} {expr_to_source(e.right, prec + 1, unicode)}"
         return _paren(s, prec, parent_prec)
+    if isinstance(e, Tuple):
+        return ", ".join(expr_to_source(a, 0, unicode) for a in e.items)
     raise TypeError(type(e))
 
 

@@ -35,6 +35,8 @@ class RenderStats:
     warmup_steps: int = 0
     passes: int = 0
     tiles: int = 1
+    tiles_done: int = 0  # complete tiles in a partial result (0 = uniform partial)
+    finished_early: bool = False  # soft-stopped ("Finish now")
     elapsed: float = 0.0
     accumulate_seconds: float = 0.0
     framing_seconds: float = 0.0

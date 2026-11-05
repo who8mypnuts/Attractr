@@ -35,6 +35,7 @@ from attractr.core.formula.ast import (
     ParamDecl,
     Program,
     Stmt,
+    Tuple,
     Unary,
     Var,
 )
@@ -96,7 +97,7 @@ class Parser:
     def parse_param(self) -> ParamDecl:
         start = self.expect("ident", "param")
         name = self.expect("ident").text
-        if name.endswith("'") or name in ("x", "y", "z"):
+        if name.endswith("'") or name in ("x", "y", "z", "w"):
             raise FormulaError(f"{name!r} cannot be a parameter name", start.line, start.col)
         self.expect("op", "=")
         default = self.parse_const()
@@ -137,7 +138,7 @@ class Parser:
         if t.kind != "ident":
             raise FormulaError(f"expected a statement, got {t.text!r}", t.line, t.col)
         target = self.advance().text
-        if target in ("x", "y", "z"):
+        if target in ("x", "y", "z", "w"):
             raise FormulaError(
                 f"cannot assign to state variable {target!r}; use {target}' (map) or d{target} (flow)",
                 t.line, t.col, len(target),
@@ -146,6 +147,16 @@ class Parser:
             raise FormulaError(f"{target!r} is reserved", t.line, t.col, len(target))
         self.expect("op", "=")
         expr = self.parse_expr()
+        if target == "plot":  # plot = ex, ey[, ez]
+            items = [expr]
+            while self.at_op(","):
+                self.advance()
+                items.append(self.parse_expr())
+            if len(items) == 2:
+                items.append(Num(0.0))
+            if len(items) != 3:
+                raise FormulaError("plot needs two or three expressions: plot = ex, ey, ez", t.line, t.col)
+            expr = Tuple(tuple(items))
         if not (self.at("newline") or self.at("eof") or self.at_op(";") or self.at_op("}")):
             raise FormulaError(f"unexpected {self.cur.text!r} after expression", self.cur.line, self.cur.col)
         return Assign(target, expr, t.line)

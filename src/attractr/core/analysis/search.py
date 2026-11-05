@@ -12,7 +12,7 @@ import numpy as np
 from attractr.core.analysis.lyapunov import largest_exponent
 from attractr.core.attractors.spec import AttractorSpec
 from attractr.core.jobs.cancel import NEVER, CancelToken
-from attractr.core.render.framing import framing_from_points, sample_attractor
+from attractr.core.render.framing import framing_from_points, plotted, sample_attractor
 
 
 @dataclass(frozen=True)
@@ -46,7 +46,7 @@ def evaluate(spec: AttractorSpec, params: dict[str, float], dt: float | None = N
     p = spec.params_array(params)
     dt_ = float(dt) if dt else spec.dt
     pts = sample_attractor(spec, p, dt_, 1, min(spec.warmup, 2000), seed, n_traj=64, steps=64)
-    finite = np.all(np.isfinite(pts), axis=1)
+    finite = np.all(np.isfinite(pts[:, :4]), axis=1)
     spread = float(finite.mean())
     if spread < 0.6:
         return None
@@ -54,7 +54,7 @@ def evaluate(spec: AttractorSpec, params: dict[str, float], dt: float | None = N
     if fr.radius < 1e-6 or fr.radius > 1e5:
         return None
     # a collapsed attractor (fixed point / tiny cycle) has almost no spatial variance
-    good = pts[finite]
+    good = plotted(pts)
     if good.shape[0] > 10 and float(good.std(axis=0).max()) < 1e-6 * fr.radius:
         return None
     lam = largest_exponent(spec, params, dt=dt_, steps=steps, seed=seed)

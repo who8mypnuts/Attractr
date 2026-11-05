@@ -10,9 +10,25 @@ from PySide6.QtWidgets import QHBoxLayout, QListWidget, QListWidgetItem, QMessag
 
 from attractr.core.io.metadata import read_settings
 from attractr.core.project.gallery import GalleryEntry, gallery
+from attractr.gui.dragdrop import gallery_mime
 from attractr.gui.state.document import TAGS_ALL, Document
 
 THUMB = 128
+
+
+class _GalleryList(QListWidget):
+    """Icon list whose items can be dragged onto the viewport (re-opens the settings) or
+    out of the application (as a file URL)."""
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setDragEnabled(True)
+        self.setDragDropMode(QListWidget.DragDropMode.DragOnly)
+
+    def mimeData(self, items):  # noqa: N802 — Qt override
+        if not items:
+            return super().mimeData(items)
+        return gallery_mime(items[0].data(Qt.ItemDataRole.UserRole))
 
 
 class GalleryPanel(QWidget):
@@ -21,11 +37,10 @@ class GalleryPanel(QWidget):
         self.doc = doc
         lay = QVBoxLayout(self)
         lay.setContentsMargins(6, 6, 6, 6)
-        self.list = QListWidget()
+        self.list = _GalleryList()
         self.list.setViewMode(QListWidget.ViewMode.IconMode)
         self.list.setIconSize(QSize(THUMB, THUMB))
         self.list.setResizeMode(QListWidget.ResizeMode.Adjust)
-        self.list.setMovement(QListWidget.Movement.Static)
         self.list.setSpacing(6)
         lay.addWidget(self.list, 1)
         btns = QHBoxLayout()

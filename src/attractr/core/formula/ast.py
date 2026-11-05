@@ -50,13 +50,21 @@ class BoolOp:
     right: Expr
 
 
-Expr = Num | Var | Call | BinOp | Unary | Compare | BoolOp
+@dataclass(frozen=True)
+class Tuple:
+    """Expression list — only valid as the right-hand side of ``plot = …``."""
+
+    items: tuple[Expr, ...]
+
+
+Expr = Num | Var | Call | BinOp | Unary | Compare | BoolOp | Tuple
 
 # ── statements ──────────────────────────────────────────────────────────────────
 
-NEXT_TARGETS = ("x'", "y'", "z'")
-DERIV_TARGETS = ("dx", "dy", "dz")
-SPECIAL_TARGETS = ("depth", "color")
+NEXT_TARGETS = ("x'", "y'", "z'", "w'")
+DERIV_TARGETS = ("dx", "dy", "dz", "dw")
+SPECIAL_TARGETS = ("depth", "color", "plot", "section")
+STATE_VARS = ("x", "y", "z", "w")
 
 
 @dataclass(frozen=True)
@@ -141,6 +149,9 @@ def walk(node: Expr):
         yield from walk(node.right)
     elif isinstance(node, Unary):
         yield from walk(node.operand)
+    elif isinstance(node, Tuple):
+        for a in node.items:
+            yield from walk(a)
 
 
 def all_assigns(body: tuple[Stmt, ...]):

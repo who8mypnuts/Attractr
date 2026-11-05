@@ -14,7 +14,7 @@ dy/dt = x + z
 dz/dt = x · z + 3 · y²
 ```
 
-Integration: RK4, default dt = 0.02, initial condition (0.11, 0.08, 0.14).
+Integration: RK4, default dt = 0.02, initial condition (0.11, 0.08, 0.14, 0.0).
 
 ## References
 

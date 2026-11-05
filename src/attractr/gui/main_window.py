@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 from attractr.core.io.paths import resources_dir, user_dir
 from attractr.core.jobs.queue import JobQueue
 from attractr.core.project.files import SUFFIX
+from attractr.gui import dragdrop
 from attractr.gui.controllers.animation_controller import AnimationController
 from attractr.gui.controllers.preview_controller import PreviewController
 from attractr.gui.controllers.render_job import RenderJob
@@ -57,17 +58,17 @@ class MainWindow(QMainWindow):
         self.qs = QSettings()
         self.doc = document or Document()
         self.queue = JobQueue(max_concurrent=1, parent=self)
+        self._prune_thumb_cache()
         self.thumbs = ThumbnailWorker(parent=self)
         self.thumbs.start()
 
         # ── centre ──────────────────────────────────────────────────────────────
         self.viewport = Viewport(self.doc)
         self.setCentralWidget(self.viewport)
+        self.setAcceptDrops(True)
+        self.viewport.dropRequested.connect(lambda mime: dragdrop.handle_drop(self, mime))
         self.preview = PreviewController(self.doc, self)
-        self.preview.max_side = int(self.qs.value("preview/max_side", 1024))
-        self.preview.ppp = float(self.qs.value("preview/ppp", 2.0))
-        self.preview.interactive_ppp = float(self.qs.value("preview/interactive_ppp", 0.4))
-        self.preview.set_engine(self.qs.value("preview/engine", "auto"))
+        self._apply_prefs()
         self.viewport.viewResized.connect(self.preview.set_view_size)
         self.preview.imageReady.connect(self._on_image)
         self.preview.statusChanged.connect(self._set_status)
@@ -137,6 +138,8 @@ class MainWindow(QMainWindow):
         self.doc.dirtyChanged.connect(lambda _: self._update_title())
         self.doc.attractorChanged.connect(lambda _: self._update_title())
         self.queue.job_ended.connect(self._on_job_ended)
+        self.queue.idle.connect(self._on_queue_idle)
+        self._jobs_since_idle: list = []
         self._update_title()
         self._restore_layout()
         QTimer.singleShot(800, self.stats_panel.refresh_system_async)
@@ -174,6 +177,7 @@ class MainWindow(QMainWindow):
         a["open"] = QAction("&Open…", self, shortcut=QKeySequence.StandardKey.Open, triggered=self.open_project)
         a["save"] = QAction("&Save", self, shortcut=QKeySequence.StandardKey.Save, triggered=self.save_project)
         a["save_as"] = QAction("Save &As…", self, shortcut=QKeySequence.StandardKey.SaveAs, triggered=lambda: self.save_project(True))
+        a["export_svg"] = QAction("Export orbit trace as SVG…", self, triggered=self.export_svg)
         a["import_image"] = QAction("Import settings from image…", self, triggered=self.import_image)
         a["quit"] = QAction("&Quit", self, shortcut=QKeySequence.StandardKey.Quit, triggered=self.close)
         a["undo"] = self.doc.undo_stack.createUndoAction(self, "&Undo")
@@ -191,6 +195,8 @@ class MainWindow(QMainWindow):
         a["hud"] = QAction("Show HUD", self, shortcut="H", checkable=True, checked=True, triggered=self._toggle_hud)
         a["render"] = QAction("⬛ Render…", self, shortcut="Ctrl+R", triggered=self.show_render_dialog)
         a["quick_render"] = QAction("Quick render (2048²)", self, shortcut="Ctrl+Shift+R", triggered=self.quick_render)
+        a["resume_render"] = QAction("Resume render from checkpoint…", self, triggered=self.resume_render)
+        a["batch_render"] = QAction("Batch render folder…", self, triggered=self.batch_render)
         a["timeline"] = QAction("Timeline", self, shortcut="T", triggered=lambda: (self.docks["timeline"].show(), self.docks["timeline"].raise_()))
         a["animate"] = QAction("🎞 Render animation…", self, shortcut="Ctrl+Shift+A", triggered=self.show_animate_dialog)
         a["copy_code"] = QAction("Copy share code", self, shortcut="Ctrl+Shift+C", triggered=self.presets_panel._copy_code)
@@ -208,7 +214,7 @@ class MainWindow(QMainWindow):
         m = mb.addMenu("&File")
         m.addActions([a["new"], a["open"], a["save"], a["save_as"]])
         m.addSeparator()
-        m.addAction(a["import_image"])
+        m.addActions([a["import_image"], a["export_svg"]])
         m.addSeparator()
         m.addAction(a["quit"])
         m = mb.addMenu("&Edit")
@@ -228,6 +234,8 @@ class MainWindow(QMainWindow):
         m.addAction(a["gradient"])
         m = mb.addMenu("&Render")
         m.addActions([a["render"], a["quick_render"]])
+        m.addSeparator()
+        m.addActions([a["batch_render"], a["resume_render"]])
         m = mb.addMenu("&Animate")
         m.addActions([a["timeline"], a["animate"]])
         m = mb.addMenu("&Help")
@@ -266,6 +274,20 @@ class MainWindow(QMainWindow):
     def _set_status(self, text: str) -> None:
         self.status_label.setText(text)
 
+    set_status = _set_status
+
+    def confirm_discard(self) -> bool:
+        return self._confirm_discard()
+
+    # ── drag & drop (files, palettes, gallery images, share codes) ─────────────
+    def dragEnterEvent(self, e) -> None:  # noqa: N802
+        if dragdrop.can_accept(e.mimeData()):
+            e.acceptProposedAction()
+
+    def dropEvent(self, e) -> None:  # noqa: N802
+        if dragdrop.handle_drop(self, e.mimeData()):
+            e.acceptProposedAction()
+
     def _set_hover(self, text: str) -> None:
         self.hover_label.setText(text)
 
@@ -276,11 +298,26 @@ class MainWindow(QMainWindow):
         self.viewport.show_hud = on
         self.viewport.update()
 
+    def _prune_thumb_cache(self) -> None:
+        from attractr.core.io.cache import prune
+        from attractr.core.io.paths import cache_dir
+
+        mb = int(self.qs.value("thumbs/max_mb", 256))
+        try:
+            n = prune(cache_dir("thumbs"), mb * 1024 * 1024)
+        except OSError:
+            return
+        if n:
+            log.info("pruned %d cached thumbnails (limit %d MB)", n, mb)
+
     def _apply_prefs(self) -> None:
+        from attractr.core.render.develop import gpu_develop
+
         self.preview.max_side = int(self.qs.value("preview/max_side", 1024))
         self.preview.ppp = float(self.qs.value("preview/ppp", 2.0))
         self.preview.interactive_ppp = float(self.qs.value("preview/interactive_ppp", 0.4))
         self.preview.set_engine(self.qs.value("preview/engine", "auto"))
+        gpu_develop.enabled = self.qs.value("develop/gpu", "true") in ("true", True)
 
     def _update_title(self, *_: object) -> None:
         name = self.doc.path.name if self.doc.path else "untitled"
@@ -334,6 +371,22 @@ class MainWindow(QMainWindow):
             return
         self.doc.apply(s, "Import image settings", TAGS_ALL)
 
+    def export_svg(self) -> None:
+        """File → Export orbit trace as SVG…: one trajectory as vector polylines / dots."""
+        from attractr.core.io.naming import render_name
+        from attractr.core.io.svg_export import write_svg
+
+        s = self.doc.settings
+        path, _ = QFileDialog.getSaveFileName(self, "Export orbit trace as SVG", str(Path.home() / (render_name(s) + ".svg")), "SVG (*.svg)")
+        if not path:
+            return
+        try:
+            write_svg(s, path, points=int(self.qs.value("svg/points", 20000)))
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.warning(self, "Export SVG", f"Could not export:\n{exc}")
+            return
+        self._set_status(f"wrote {Path(path).name}")
+
     def _confirm_discard(self) -> bool:
         if not self.doc.dirty:
             return True
@@ -365,7 +418,31 @@ class MainWindow(QMainWindow):
         fmt = self.qs.value("render/report_fmt", "md")
         reports = [fmt] if self.qs.value("render/report", "true") == "true" else []
         out = Path(self.qs.value("render/folder", str(Path.home() / "Attractr"))).expanduser()
-        self.submit_job(RenderJob(replace(s, quality=q), out, self.qs.value("render/template", "{name}_{date}_{w}x{h}"), report_formats=reports))
+        self.submit_job(RenderJob(replace(s, quality=q), out, self.qs.value("render/template", "{name}_{date}_{w}x{h}"), report_formats=reports,
+                                  checkpoint_every=60.0 * float(self.qs.value("render/checkpoint_minutes", 2.0))))
+
+    def resume_render(self) -> None:
+        """Render → Resume from checkpoint…: continue an interrupted render from its .npz checkpoint."""
+        from attractr.core.render.checkpoint import SUFFIX, Checkpoint, list_checkpoints
+
+        out = Path(self.qs.value("render/folder", str(Path.home() / "Attractr"))).expanduser()
+        existing = list_checkpoints(out)
+        start = str(existing[0]) if existing else str(out / "checkpoints")
+        path, _ = QFileDialog.getOpenFileName(self, "Resume render from checkpoint", start, f"Attractr checkpoints (*{SUFFIX});;All files (*)")
+        if not path:
+            return
+        try:
+            ck = Checkpoint.load(path)
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.warning(self, "Resume render", f"Could not read the checkpoint:\n{exc}")
+            return
+        fmt = self.qs.value("render/report_fmt", "md")
+        reports = [fmt] if self.qs.value("render/report", "true") == "true" else []
+        job = RenderJob(ck.next_settings(), Path(path).parent.parent, self.qs.value("render/template", "{name}_{date}_{w}x{h}"),
+                        report_formats=reports, resume=ck,
+                        checkpoint_every=60.0 * float(self.qs.value("render/checkpoint_minutes", 2.0)))
+        self._set_status(f"resuming at {ck.fraction * 100:.0f} % ({Path(path).name})")
+        self.submit_job(job)
 
     def show_animate_dialog(self) -> None:
         from attractr.gui.dialogs.animate_dialog import AnimateDialog
@@ -384,7 +461,61 @@ class MainWindow(QMainWindow):
         self.queue.submit(job)
         self._set_status(f"queued {job.name}")
 
+    def batch_render(self) -> None:
+        """Render → Batch render folder…: every project / .atr / tagged PNG in a folder × a render preset."""
+        from PySide6.QtWidgets import QInputDialog
+
+        from attractr.core.project import batch
+        from attractr.core.project.render_presets import render_presets
+
+        folder = QFileDialog.getExistingDirectory(self, "Folder with .attractr / .atr / tagged .png files", str(Path.home()))
+        if not folder:
+            return
+        names = render_presets.names()
+        name, ok = QInputDialog.getItem(self, "Batch render", "Render preset:", names, 0, False)
+        if not ok:
+            return
+        preset = render_presets.get(name)
+        items, skipped = batch.plan(Path(folder), preset)
+        if not items:
+            QMessageBox.information(self, "Batch render", "No renderable files found in that folder.")
+            return
+        out = Path(folder) / "renders"
+        every = 60.0 * float(self.qs.value("render/checkpoint_minutes", 2.0))
+        for it in items:
+            self.submit_job(RenderJob(it.settings, out, "{name}_{w}x{h}", fmt=preset.fmt, bit_depth=preset.bit_depth,
+                                      report_formats=list(preset.report_formats), dynamics=preset.dynamics,
+                                      name=f"Batch {it.path.name}", checkpoint_every=every))
+        msg = f"queued {len(items)} render(s) → {out}"
+        if skipped:
+            msg += f" · skipped {len(skipped)} file(s)"
+        self._set_status(msg)
+
+    def _on_queue_idle(self) -> None:
+        """Desktop notification when a batch of jobs has finished and the window is not in front."""
+        done = [j for j in self._jobs_since_idle if j.state == "done"]
+        failed = [j for j in self._jobs_since_idle if j.state == "failed"]
+        self._jobs_since_idle = []
+        if not done and not failed:
+            return
+        if self.isActiveWindow() and len(done) + len(failed) == 1:
+            return  # the status bar already says it
+        text = f"{len(done)} render(s) finished" + (f", {len(failed)} failed" if failed else "")
+        self._notify("Attractr — queue finished", text)
+
+    def _notify(self, title: str, text: str) -> None:
+        from PySide6.QtWidgets import QSystemTrayIcon
+
+        if not QSystemTrayIcon.isSystemTrayAvailable() or QApplication.instance().property("attractr_testing"):
+            return
+        if not hasattr(self, "_tray"):
+            self._tray = QSystemTrayIcon(self.windowIcon(), self)
+            self._tray.setToolTip(APP_NAME)
+            self._tray.show()
+        self._tray.showMessage(title, text, QSystemTrayIcon.MessageIcon.Information, 6000)
+
     def _on_job_ended(self, job) -> None:
+        self._jobs_since_idle.append(job)
         if isinstance(job, RenderJob) and job.state == "done" and job.output:
             out = job.output
             self.gallery_panel.refresh()

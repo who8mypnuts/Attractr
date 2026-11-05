@@ -24,7 +24,7 @@ dz/dt = −β · y
 | m0 | -1.14286 | [-2, 0] | Inner slope of the Chua diode. |
 | m1 | -0.714286 | [-1.5, 0] | Outer slope of the Chua diode. |
 
-Integration: RK4, default dt = 0.005, initial condition (0.7, 0.0, 0.0).
+Integration: RK4, default dt = 0.005, initial condition (0.7, 0.0, 0.0, 0.0).
 
 ## References
 

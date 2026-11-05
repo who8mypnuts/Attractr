@@ -12,7 +12,7 @@ from dataclasses import dataclass
 HEADER_KEYS = frozenset(
     {
         "name", "id", "kind", "dims", "desc", "ref", "author", "dt", "ic", "warmup",
-        "camera", "palette", "style", "tags", "version", "family", "lyapunov", "jitter",
+        "camera", "palette", "style", "tags", "version", "family", "lyapunov", "jitter", "boost",
     }
 )
 

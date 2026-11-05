@@ -148,6 +148,22 @@ class StopBar(QWidget):
             super().keyPressEvent(e)
 
 
+class _PaletteList(QListWidget):
+    """Palette library list; swatches can be dragged onto the viewport to apply them."""
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setDragEnabled(True)
+        self.setDragDropMode(QListWidget.DragDropMode.DragOnly)
+
+    def mimeData(self, items):  # noqa: N802 — Qt override
+        from attractr.gui.dragdrop import palette_mime
+
+        if not items:
+            return super().mimeData(items)
+        return palette_mime(items[0].data(Qt.ItemDataRole.UserRole))
+
+
 class GradientEditor(QDialog):
     gradientChanged = Signal(object)  # live
     editingFinished = Signal()
@@ -208,7 +224,7 @@ class GradientEditor(QDialog):
         # ── right: library ─────────────────────────────────────────────────────
         right = QVBoxLayout()
         right.addWidget(QLabel("Library"))
-        self.library = QListWidget()
+        self.library = _PaletteList()
         self.library.setIconSize(self.library.iconSize())
         right.addWidget(self.library, 1)
         lb = QHBoxLayout()

@@ -145,7 +145,7 @@ def build_report(
         ["Iterations requested / done", f"{_human(st.iterations_requested)} / {_human(st.iterations_done)}"],
         ["Trajectories", f"{st.trajectories:,}"], ["Warm-up steps (accumulation)", str(st.warmup_steps)],
         ["Supersampling", f"{q.supersample}×"], ["Splat radius", str(q.splat_radius)],
-        ["Gap filling", str(q.gap_fill and spec.is_flow)], ["Seed", str(q.seed)],
+        ["Gap filling", str(q.gap_fill and spec.plots_continuous)], ["Seed", str(q.seed)],
         ["Engine", f"{st.engine} ({st.device})"], ["Precision", st.precision],
         ["Passes / tiles", f"{st.passes} / {st.tiles}"],
     ])]))

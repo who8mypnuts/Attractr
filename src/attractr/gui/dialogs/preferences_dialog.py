@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import QSettings
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
@@ -36,12 +37,30 @@ class PreferencesDialog(QDialog):
         self.interactive_ppp = QDoubleSpinBox()
         self.interactive_ppp.setRange(0.05, 16)
         self.interactive_ppp.setValue(float(qs.value("preview/interactive_ppp", 0.4)))
+        self.thumb_mb = QSpinBox()
+        self.thumb_mb.setRange(0, 100000)
+        self.thumb_mb.setSuffix(" MB")
+        self.thumb_mb.setSpecialValueText("unlimited")
+        self.thumb_mb.setValue(int(qs.value("thumbs/max_mb", 256)))
+        self.thumb_mb.setToolTip("The thumbnail cache (~/.attractr/cache/thumbs) is pruned to this size at start-up (oldest first)")
+        self.ckpt = QDoubleSpinBox()
+        self.ckpt.setRange(0, 120)
+        self.ckpt.setDecimals(1)
+        self.ckpt.setSuffix(" min")
+        self.ckpt.setSpecialValueText("off")
+        self.ckpt.setValue(float(qs.value("render/checkpoint_minutes", 2.0)))
+        self.ckpt.setToolTip("Long renders write a resumable checkpoint (.npz next to the output, in checkpoints/) this often")
+        self.gpu_develop = QCheckBox("Develop large images (≥ 1.5 Mpixel) on the GPU when possible")
+        self.gpu_develop.setChecked(qs.value("develop/gpu", "true") in ("true", True))
         self.ffmpeg = QLineEdit(qs.value("ffmpeg/path", ""))
         self.ffmpeg.setPlaceholderText("auto-detect on PATH")
         form.addRow("Preview engine", self.preview_engine)
         form.addRow("Preview max side (px)", self.preview_side)
         form.addRow("Preview points / pixel", self.preview_ppp)
         form.addRow("Interactive points / pixel", self.interactive_ppp)
+        form.addRow("Thumbnail cache limit", self.thumb_mb)
+        form.addRow("Render checkpoint every", self.ckpt)
+        form.addRow("GPU develop", self.gpu_develop)
         form.addRow("ffmpeg executable", self.ffmpeg)
         bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         bb.accepted.connect(self._save)
@@ -54,5 +73,8 @@ class PreferencesDialog(QDialog):
         qs.setValue("preview/max_side", self.preview_side.value())
         qs.setValue("preview/ppp", self.preview_ppp.value())
         qs.setValue("preview/interactive_ppp", self.interactive_ppp.value())
+        qs.setValue("thumbs/max_mb", self.thumb_mb.value())
+        qs.setValue("render/checkpoint_minutes", self.ckpt.value())
+        qs.setValue("develop/gpu", self.gpu_develop.isChecked())
         qs.setValue("ffmpeg/path", self.ffmpeg.text())
         self.accept()

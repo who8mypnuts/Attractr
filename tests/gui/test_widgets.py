@@ -50,3 +50,43 @@ def test_slider_spin_range_growth(app):
     s.valueChanged.connect(vals.append)
     s.spin.setValue(3.0)  # outside the soft range → range grows, value kept
     assert s.value() == 3.0 and s.hi >= 3.0 and vals[-1] == 3.0
+
+
+def test_slider_spin_nudge_wheel_and_history(app):
+    from PySide6.QtCore import QEvent, QPoint, QPointF, Qt
+    from PySide6.QtGui import QWheelEvent
+
+    from attractr.gui.widgets.slider_spin import SliderSpin
+
+    s = SliderSpin("a", 0.0, 10.0, 5.0)
+    vals = []
+    s.valueChanged.connect(vals.append)
+    s.nudge_up.click()  # +1 % of the range
+    assert abs(s.value() - 5.1) < 1e-9
+    s.nudge(-0.1)  # −10 %
+    assert abs(s.value() - 4.1) < 1e-9
+    ev = QWheelEvent(QPointF(1, 1), QPointF(1, 1), QPoint(0, 0), QPoint(0, 120), Qt.MouseButton.NoButton,
+                     Qt.KeyboardModifier.ControlModifier, Qt.ScrollPhase.NoScrollPhase, False)
+    assert s.eventFilter(s.slider, ev)  # Ctrl-wheel: 0.1 % fine step
+    assert abs(s.value() - 4.11) < 1e-9
+    assert [round(v, 6) for v in list(s.history)[-3:]] == [5.1, 4.1, 4.11]
+    s.spin.setValue(7.0)
+    assert s.history[-1] == 7.0 and len(s.history) == 4
+    assert ev.type() == QEvent.Type.Wheel
+
+
+def test_search_panel_polynomial_mode(app):
+    from attractr.core.attractors.registry import registry
+    from attractr.gui.panels.search_panel import POLY_ID, SearchPanel, polynomial_space
+    from attractr.gui.state.document import Document
+
+    doc = Document()
+    doc.set_attractor(registry.get("lorenz"))
+    panel = SearchPanel(doc)
+    assert not panel.polynomial_mode and not panel.magnitude.isVisibleTo(panel)
+    panel.space.setCurrentIndex(1)
+    assert panel.polynomial_mode and panel.magnitude.isVisibleTo(panel) and not panel.use_locks.isVisibleTo(panel)
+    settings, spec = panel._search_space()
+    assert spec.id == POLY_ID and settings.attractor == POLY_ID and len(spec.params) == 30
+    assert spec.params[0].lo == -1.2 and polynomial_space(0.5).params[3].hi == 0.5
+    assert settings.look == doc.settings.look  # the current look carries over

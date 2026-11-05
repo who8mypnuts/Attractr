@@ -33,3 +33,16 @@ def test_cli_code_roundtrip(tmp_path: Path, capsys):
     out = tmp_path / "c.png"
     assert run(["render", code, "--size", "48x48", "--ppp", "1", "--engine", "cpu", "-o", str(out), "-q"]) == 0
     assert out.exists()
+
+
+def test_svg_export(tmp_path):
+    from attractr.core.attractors.registry import registry
+    from attractr.core.io.svg_export import write_svg
+    from attractr.core.render.pipeline import default_settings
+    from attractr.core.render.settings import Quality
+
+    for aid, tag in (("lorenz", "<polyline"), ("henon", "<circle")):
+        s = default_settings(registry.get(aid), Quality(width=200, height=150))
+        out = write_svg(s, tmp_path / f"{aid}.svg", points=2000)
+        text = out.read_text(encoding="utf-8")
+        assert text.startswith("<svg") and 'width="200" height="150"' in text and tag in text

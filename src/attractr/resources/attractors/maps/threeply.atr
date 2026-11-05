@@ -1,0 +1,16 @@
+name: Threeply
+family: Maps
+desc: The third of Barry Martin's Scientific American maps. A three-fold sinusoidal fold gives interlocking plies of points.
+ref: B. Martin, in A. K. Dewdney, Scientific American (1986); P. Bourke, "Threeply"
+tags: map, 2d, classic
+dims: 2
+ic: 0 0 0
+jitter: 0.5
+warmup: 100
+
+param a = -55 [-100, 100]
+param b = -1 [-5, 5]
+param c = -42 [-100, 100]
+
+x' = y - sign(x)*abs(sin(x)*cos(b) + c - x*sin(a + b + c))
+y' = a - x

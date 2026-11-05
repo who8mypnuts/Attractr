@@ -16,8 +16,9 @@ from attractr.core.formula.codegen_glsl import generate_gpu_source
 from attractr.core.jobs.cancel import NEVER, CancelToken
 from attractr.core.jobs.progress import ProgressTracker
 from attractr.core.render.accumulators import color_value_range, needs_for
+from attractr.core.render.checkpoint import Checkpoint
 from attractr.core.render.engines import selector
-from attractr.core.render.engines.base import Engine, EngineCaps, PassSink
+from attractr.core.render.engines.base import Engine, EngineCaps, PassSink, resume_plan
 from attractr.core.render.engines.cpu_numba import apply_lock, downsample, effective_camera, splat_kernel
 from attractr.core.render.engines.gl_common import read_shader
 from attractr.core.render.engines.state import seed_from_points
@@ -38,8 +39,8 @@ PARAMS_DTYPE = np.dtype([
     ("want_depth", "i4"), ("want_zmin", "i4"), ("want_color", "i4"), ("do_plot", "i4"),
     ("w", "i4"), ("h", "i4"), ("n", "i4"),
     ("dt", "f4"), ("inv_radius", "f4"), ("cx", "f4"), ("cy", "f4"), ("focal", "f4"), ("persp", "f4"),
-    ("jitter", "f4"), ("inv_n", "f4"), ("cv_lo", "f4"), ("cv_inv_range", "f4"),
-    ("R", "f4", (9,)), ("center", "f4", (3,)), ("ic", "f4", (3,)),
+    ("jitter", "f4"), ("inv_n", "f4"), ("cv_lo", "f4"), ("cv_inv_range", "f4"), ("t0", "f4"),
+    ("R", "f4", (9,)), ("center", "f4", (3,)), ("ic", "f4", (4,)),
 ])
 
 
@@ -118,7 +119,8 @@ class OpenCLEngine(Engine):
 
     # ── accumulate ─────────────────────────────────────────────────────────────
     def accumulate(self, settings: RenderSettings, spec: AttractorSpec, *, sink: PassSink | None = None,
-                   cancel: CancelToken = NEVER, tracker: ProgressTracker | None = None) -> RenderResult:
+                   cancel: CancelToken = NEVER, tracker: ProgressTracker | None = None,
+                   resume: Checkpoint | None = None) -> RenderResult:
         import pyopencl as cl
 
         t_start = time.perf_counter()
@@ -145,6 +147,8 @@ class OpenCLEngine(Engine):
         framing, sample_pts = compute_framing(spec, params, dt, substeps, spec.warmup, q.seed, settings.camera, W, H)
         stats.framing_seconds = time.perf_counter() - t0
         framing = apply_lock(framing, settings.camera)
+        plan = resume_plan(spec.iteration_budget(q.iterations), q.seed, resume)
+        framing = plan.framing or framing
         cancel.check()
         cam = effective_camera(settings.camera, framing)
         R = cam.matrix().astype(np.float32).ravel()
@@ -154,12 +158,15 @@ class OpenCLEngine(Engine):
         n_traj = q.trajectories or 65536
         n_traj = int(math.ceil(n_traj / 128) * 128)
         stats.trajectories = n_traj
-        stats.iterations_requested = q.iterations
+        budget = plan.budget
+        stats.iterations_requested = spec.iteration_budget(q.iterations)
         stats.warmup_steps = int(q.warmup) if q.warmup is not None else ACCUM_WARMUP
 
         tile = self._tile_size(Ws, Hs, needs.buffer_count)
         tiles = [(tx, ty, min(tile, Ws - tx), min(tile, Hs - ty)) for ty in range(0, Hs, tile) for tx in range(0, Ws, tile)]
         stats.tiles = len(tiles)
+        if resume is not None and not resume.uniform and resume.tiles != len(tiles):
+            raise ValueError(f"checkpoint has {resume.tiles} tiles but this device would use {len(tiles)}; resume on the same engine/device")
         count_full = np.zeros((Hs, Ws), dtype=np.float32)
         depth_full = np.zeros((Hs, Ws), dtype=np.float32) if needs.depth else None
         zmin_full = np.full((Hs, Ws), np.inf, dtype=np.float32) if needs.zmin else None
@@ -177,7 +184,7 @@ class OpenCLEngine(Engine):
         P = np.zeros(1, dtype=PARAMS_DTYPE)
         P["substeps"] = substeps
         P["splat_r"] = int(q.splat_radius)
-        P["gap_fill"] = 1 if (q.gap_fill and spec.is_flow) else 0
+        P["gap_fill"] = 1 if (q.gap_fill and spec.plots_continuous) else 0
         P["color_code"] = needs.color_code
         P["want_depth"], P["want_zmin"], P["want_color"] = int(needs.depth), int(needs.zmin), int(needs.color)
         P["n"] = n_traj
@@ -193,8 +200,8 @@ class OpenCLEngine(Engine):
         P["center"] = np.asarray(framing.center, dtype=np.float32)
         P["ic"] = np.asarray(spec.ic, dtype=np.float32)
 
-        total_steps = max(1, math.ceil(q.iterations / n_traj))
-        steps_all = total_steps * len(tiles)
+        total_steps = math.ceil(budget / n_traj)
+        steps_all = max(1, total_steps * (len(tiles) - plan.skip_tiles))
         done_all = 0
         passes = 0
         restarts_total = 0
@@ -204,10 +211,13 @@ class OpenCLEngine(Engine):
         last_partial = time.perf_counter()
 
         for ti, (tx, ty, tw, th) in enumerate(tiles):
+            if ti < plan.skip_tiles:
+                continue  # complete in the checkpoint
             cancel.check()
-            st = seed_from_points(n_traj, q.seed, sample_pts, framing.radius * 1e-2)
+            st = seed_from_points(n_traj, plan.seed, sample_pts, framing.radius * 1e-2)
             state = np.zeros((n_traj, 4), dtype=np.float64 if fp64 else np.float32)
-            state[:, 0], state[:, 1], state[:, 2] = st.X, st.Y, st.Z
+            state[:, 0], state[:, 1], state[:, 2], state[:, 3] = st.X, st.Y, st.Z, st.W
+            t_base = [0.0]
             npix = tw * th
             b_state = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=state)
             b_rng = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=st.RS.astype(np.uint32))
@@ -232,7 +242,8 @@ class OpenCLEngine(Engine):
             b_P = cl.Buffer(ctx, mf.READ_ONLY, size=P.nbytes)
 
             def dispatch(steps: int, plot: int) -> None:
-                P["steps"], P["do_plot"] = steps, plot
+                P["steps"], P["do_plot"], P["t0"] = steps, plot, t_base[0]
+                t_base[0] += steps * substeps
                 cl.enqueue_copy(queue, b_P, P)
                 k_iterate(queue, (n_traj,), (128,), b_state, b_rng, b_prev, b_prevd, b_stats,
                           b_cnt, b_dep, b_zmn, b_cvb, b_P, b_kern, b_p)
@@ -268,6 +279,12 @@ class OpenCLEngine(Engine):
                 steps_done = 0
                 while steps_done < total_steps:
                     cancel.check()
+                    if cancel.finishing:  # soft stop: this and every later tile keep the reduced budget
+                        if not stats.finished_early:
+                            stats.finished_early = True
+                            stats.notes.append(f"Finished early on request at {100 * steps_done / total_steps:.0f} % of the budget.")
+                        total_steps = steps_done
+                        break
                     k = min(steps_per_pass, total_steps - steps_done, MAX_STEPS_PER_PASS)
                     tp = time.perf_counter()
                     dispatch(k, 1)
@@ -284,13 +301,20 @@ class OpenCLEngine(Engine):
                     if sink is not None and len(tiles) == 1 and (time.perf_counter() - last_partial > 0.5 or steps_done >= total_steps):
                         last_partial = time.perf_counter()
                         readback()
-                        sink(self._assemble(settings, framing, stats, count_full, depth_full, zmin_full, cv_full, ss, False), frac)
+                        stats.iterations_done = steps_done * n_traj
+                        stats.accumulate_seconds = time.perf_counter() - t_acc
+                        sink(plan.finish(self._assemble(settings, framing, stats, count_full, depth_full, zmin_full, cv_full, ss, False)), frac)
                 readback()
                 s = np.zeros(4, dtype=np.uint32)
                 cl.enqueue_copy(queue, s, b_stats)
                 queue.finish()
                 restarts_total += int(s[0])
                 plotted_total += (int(s[2]) * 4294967296.0 + int(s[1])) / 16.0
+                if sink is not None and len(tiles) > 1:  # tile-complete partial (checkpointable)
+                    stats.tiles_done = ti + 1
+                    stats.iterations_done = total_steps * n_traj
+                    stats.accumulate_seconds = time.perf_counter() - t_acc
+                    sink(plan.finish(self._assemble(settings, framing, stats, count_full, depth_full, zmin_full, cv_full, ss, False)), (ti + 1) / len(tiles))
             finally:
                 for b in (b_state, b_rng, b_prev, b_prevd, b_stats, b_cnt, b_dep, b_zmn, b_cvb, a_cnt, a_dep, a_zmn, a_cv, b_P):
                     b.release()
@@ -299,10 +323,11 @@ class OpenCLEngine(Engine):
 
         stats.accumulate_seconds = time.perf_counter() - t_acc
         stats.iterations_done = total_steps * n_traj
+        stats.tiles_done = 0
         stats.passes = passes
         stats.restarts = restarts_total
         stats.points_plotted = plotted_total
-        result = self._assemble(settings, framing, stats, count_full, depth_full, zmin_full, cv_full, ss, True)
+        result = plan.finish(self._assemble(settings, framing, stats, count_full, depth_full, zmin_full, cv_full, ss, True))
         summarize(result, look.percentile)
         stats.elapsed = time.perf_counter() - t_start
         tracker.update(1.0, "accumulated", force=True)

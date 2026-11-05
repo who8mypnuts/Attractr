@@ -36,6 +36,10 @@ class InfoPanel(QWidget):
             extra.append(f"default dt = {spec.dt:g}")
         if spec.lyapunov_hint is not None:
             extra.append(f"λ₁ ≈ {spec.lyapunov_hint:g} at defaults")
+        if spec.analysis.uses_w:
+            extra.append("4 state variables")
+        if spec.analysis.has_section:
+            extra.append("Poincaré section")
         doc = f"""
         <h2 style='color:#4fc3f7;margin-bottom:2px'>{html.escape(spec.name)}</h2>
         <p style='color:#888;margin-top:0'>{spec.kind} · {spec.dims}-D · {html.escape(spec.family)}{' · ' + ' · '.join(extra) if extra else ''}</p>

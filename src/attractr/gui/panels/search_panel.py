@@ -1,4 +1,9 @@
-"""Search panel: random parameter search filtered by chaos, with thumbnails."""
+"""Search panel: random parameter search filtered by chaos, with thumbnails.
+
+Two search spaces: the parameters of the *current* attractor (optionally around the
+current values), or — the classic Chaoscope behaviour — the 30-coefficient Sprott
+quadratic-map space, independent of what is selected, with an adjustable coefficient
+magnitude."""
 
 from __future__ import annotations
 
@@ -8,6 +13,7 @@ from PySide6.QtCore import QSize, Qt, QThread, Signal
 from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QDoubleSpinBox,
     QHBoxLayout,
     QLabel,
@@ -20,14 +26,25 @@ from PySide6.QtWidgets import (
 )
 
 from attractr.core.analysis.search import SearchHit, search
+from attractr.core.attractors.registry import registry
+from attractr.core.attractors.spec import AttractorSpec
 from attractr.core.jobs.cancel import Cancelled, CancelToken
 from attractr.core.render.develop.developer import develop
 from attractr.core.render.engines import selector
+from attractr.core.render.pipeline import default_settings
 from attractr.core.render.settings import RenderSettings
 from attractr.gui.controllers.develop_controller import to_qimage
 from attractr.gui.state.document import Document
 
 THUMB = 112
+POLY_ID = "polynomial_sprott"
+SPACES = [("This attractor's parameters", "current"), ("Polynomial map (Sprott quadratic 3-D, 30 coefficients)", "poly")]
+
+
+def polynomial_space(magnitude: float) -> AttractorSpec:
+    """The Sprott quadratic map with every coefficient range set to ±magnitude."""
+    spec = registry.get(POLY_ID)
+    return replace(spec, params=tuple(replace(p, lo=-magnitude, hi=magnitude) for p in spec.params))
 
 
 class SearchThread(QThread):
@@ -72,6 +89,11 @@ class SearchPanel(QWidget):
         lay = QVBoxLayout(self)
         lay.setContentsMargins(6, 6, 6, 6)
         row = QHBoxLayout()
+        self.space = QComboBox()
+        for label, key in SPACES:
+            self.space.addItem(label, key)
+        self.space.setToolTip("What to search: the selected attractor's parameter ranges, or the classic polynomial-map coefficient space")
+        lay.addWidget(self.space)
         row.addWidget(QLabel("Results"))
         self.count = QSpinBox()
         self.count.setRange(1, 64)
@@ -87,7 +109,16 @@ class SearchPanel(QWidget):
         self.use_locks = QCheckBox("Keep locked")
         self.use_locks.setChecked(True)
         row.addWidget(self.use_locks)
+        row.addWidget(QLabel("Coef ±"))
+        self.magnitude = QDoubleSpinBox()
+        self.magnitude.setRange(0.1, 3.0)
+        self.magnitude.setSingleStep(0.1)
+        self.magnitude.setValue(1.2)
+        self.magnitude.setToolTip("Polynomial map: coefficients are drawn from [−magnitude, +magnitude] (Sprott used 1.2)")
+        self.magnitude.setVisible(False)
+        row.addWidget(self.magnitude)
         lay.addLayout(row)
+        self.space.currentIndexChanged.connect(self._on_space)
         self.list = QListWidget()
         self.list.setViewMode(QListWidget.ViewMode.IconMode)
         self.list.setIconSize(QSize(THUMB, THUMB))
@@ -113,14 +144,37 @@ class SearchPanel(QWidget):
         self.list.itemActivated.connect(self._apply)
         self.locked_provider = lambda: set()
 
+    def _on_space(self, idx: int) -> None:
+        poly = self.space.itemData(idx) == "poly"
+        self.magnitude.setVisible(poly)
+        self.use_locks.setVisible(not poly)
+        self.radius.setEnabled(not poly or self.doc.spec.id == POLY_ID)
+
+    @property
+    def polynomial_mode(self) -> bool:
+        return self.space.currentData() == "poly"
+
+    def _search_space(self) -> tuple[RenderSettings, AttractorSpec]:
+        """(settings, spec) the search runs in — the document's, or the polynomial map with the
+        current look."""
+        if not self.polynomial_mode:
+            return self.doc.settings, self.doc.spec
+        spec = polynomial_space(self.magnitude.value())
+        if self.doc.spec.id == POLY_ID:
+            return self.doc.settings, spec
+        s = default_settings(spec, quality=self.doc.settings.quality, look=self.doc.settings.look)
+        return s, spec
+
     def start(self) -> None:
         if self.thread is not None:
             return
+        settings, spec = self._search_space()
         locked = {}
-        if self.use_locks.isChecked():
-            vals = self.doc.settings.param_dict
+        if self.use_locks.isChecked() and not self.polynomial_mode:
+            vals = settings.param_dict
             locked = {n: vals[n] for n in self.locked_provider() if n in vals}
-        self.thread = SearchThread(self.doc.settings, self.doc.spec, self.count.value(), self.radius.value(), locked, self)
+        radius = self.radius.value() if self.radius.isEnabled() else 1.0
+        self.thread = SearchThread(settings, spec, self.count.value(), radius, locked, self)
         self.thread.hit.connect(self._on_hit)
         self.thread.progress.connect(lambda i, f: self.status.setText(f"tried {i} · found {f}"))
         self.thread.done.connect(self._on_done)
@@ -152,8 +206,11 @@ class SearchPanel(QWidget):
 
     def _apply(self, item: QListWidgetItem) -> None:
         hit = self._hits.get(item.data(Qt.ItemDataRole.UserRole))
-        if hit is not None:
-            self.doc.set_params(hit.params, "Search result")
+        if hit is None:
+            return
+        if self.polynomial_mode and self.doc.spec.id != POLY_ID:
+            self.doc.set_attractor(registry.get(POLY_ID))
+        self.doc.set_params(hit.params, "Search result")
 
     def shutdown(self) -> None:
         self.stop()
